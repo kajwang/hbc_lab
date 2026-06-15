@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hbc-lab"
+version = "0.1.0"
+description = "Humanoid whole-body control experiments built on IsaacLab and robot_lab."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["source/hbc_lab"]
+
