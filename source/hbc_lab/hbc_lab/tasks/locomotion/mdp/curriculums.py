@@ -180,3 +180,45 @@ def pose_position_cmd_levels(
             progress.append(current_width / limit_width)
 
     return torch.mean(torch.stack(progress)) if progress else torch.tensor(0.0, device=env.device)
+
+
+def spherical_pose_radius_cmd_levels(
+    env: ManagerBasedRLEnv,
+    env_ids: Sequence[int],
+    command_names: tuple[str, ...] = ("left_wrist_pose", "right_wrist_pose"),
+    penalty_term_names: tuple[str, ...] = ("penalty_left_wrist_pose_error", "penalty_right_wrist_pose_error"),
+    success_threshold: float = 0.08,
+    radius_delta: float = 0.03,
+) -> torch.Tensor:
+    """Expand spherical wrist-command radius after tracking is reliable."""
+    distances = []
+    for penalty_term_name in penalty_term_names:
+        penalty_term = env.reward_manager.get_term_cfg(penalty_term_name)
+        if penalty_term.weight >= 0.0:
+            continue
+        episode_reward = torch.mean(env.reward_manager._episode_sums[penalty_term_name][env_ids])
+        distance = episode_reward / env.max_episode_length_s / penalty_term.weight
+        distances.append(torch.clamp(distance, min=0.0))
+
+    tracking_error = torch.mean(torch.stack(distances)) if distances else torch.tensor(float("inf"), device=env.device)
+
+    if env.common_step_counter % env.max_episode_length == 0 and tracking_error < success_threshold:
+        for command_name in command_names:
+            command_term = env.command_manager.get_term(command_name)
+            ranges = command_term.cfg.ranges
+            limit_ranges = command_term.cfg.limit_ranges
+            ranges.l = _expand_uniform_range(ranges.l, limit_ranges.l, radius_delta, env.device)
+
+    progress = []
+    for command_name in command_names:
+        command_term = env.command_manager.get_term(command_name)
+        ranges = command_term.cfg.ranges
+        limit_ranges = command_term.cfg.limit_ranges
+        for range_name in ("l",):
+            current_range = getattr(ranges, range_name)
+            limit_range = getattr(limit_ranges, range_name)
+            current_width = torch.tensor(current_range[1] - current_range[0], device=env.device)
+            limit_width = torch.tensor(limit_range[1] - limit_range[0], device=env.device)
+            progress.append(current_width / limit_width)
+
+    return torch.mean(torch.stack(progress)) if progress else torch.tensor(0.0, device=env.device)

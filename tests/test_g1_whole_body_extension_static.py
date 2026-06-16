@@ -114,7 +114,7 @@ def test_whole_body_tracking_helpers_are_local_for_breakpoints():
     assert "combine_frame_transforms" in reward_source
     assert "quat_error_magnitude" in reward_source
     assert "quat_mul" in reward_source
-    assert "pose_command_w" not in reward_source
+    assert "def body_pose_command_position_error_w_l2" in reward_source
     assert "class UniformLevelPoseCommandCfg(UniformPoseCommandCfg)" in command_source
     assert "def pose_cmd_levels" in curriculum_source
     assert "command_names" in curriculum_source

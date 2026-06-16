@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from isaaclab.assets import Articulation
 from isaaclab.managers import SceneEntityCfg
-from isaaclab.utils.math import subtract_frame_transforms
+from isaaclab.utils.math import combine_frame_transforms, subtract_frame_transforms
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
@@ -69,5 +69,32 @@ def body_pose_command_position_error_in_root_frame(
 ) -> torch.Tensor:
     """Return root-frame target minus current body position for a pose command."""
     target_pos_b = env.command_manager.get_command(command_name)[:, :3]
+    current_pos_b = body_pose_in_root_frame(env, asset_cfg=asset_cfg, return_key="pos")[:, :3]
+    return target_pos_b - current_pos_b
+
+
+def _body_pose_command_target_pos_w(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    asset: Articulation,
+) -> torch.Tensor:
+    command_term = env.command_manager.get_term(command_name)
+    if hasattr(command_term, "pose_command_w"):
+        return command_term.pose_command_w[:, :3]
+
+    command = env.command_manager.get_command(command_name)
+    target_pos_w, _ = combine_frame_transforms(asset.data.root_pos_w, asset.data.root_quat_w, command[:, :3])
+    return target_pos_w
+
+
+def body_pose_command_position_error_w_in_root_frame(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Return root-frame position error to a command term's world-frame target."""
+    asset: Articulation = env.scene[asset_cfg.name]
+    target_pos_w = _body_pose_command_target_pos_w(env, command_name, asset)
+    target_pos_b, _ = subtract_frame_transforms(asset.data.root_pos_w, asset.data.root_quat_w, target_pos_w)
     current_pos_b = body_pose_in_root_frame(env, asset_cfg=asset_cfg, return_key="pos")[:, :3]
     return target_pos_b - current_pos_b

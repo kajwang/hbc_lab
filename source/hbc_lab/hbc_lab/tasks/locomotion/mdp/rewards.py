@@ -80,6 +80,30 @@ def _body_pose_command_position_distance(
     return torch.norm(target_pos_w - current_pos_w, dim=-1)
 
 
+def _body_pose_command_target_w(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    asset: RigidObject,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    command_term = env.command_manager.get_term(command_name)
+    if hasattr(command_term, "pose_command_w"):
+        return command_term.pose_command_w[:, :3], command_term.pose_command_w[:, 3:7]
+
+    command = env.command_manager.get_command(command_name)
+    return combine_frame_transforms(asset.data.root_pos_w, asset.data.root_quat_w, command[:, :3], command[:, 3:7])
+
+
+def _body_pose_command_position_distance_w(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    asset: RigidObject = env.scene[asset_cfg.name]
+    target_pos_w, _ = _body_pose_command_target_w(env, command_name, asset)
+    current_pos_w = asset.data.body_pos_w[:, asset_cfg.body_ids[0], :3]
+    return torch.norm(target_pos_w - current_pos_w, dim=-1)
+
+
 def body_pose_command_position_error_l2(
     env: ManagerBasedRLEnv,
     command_name: str,
@@ -111,6 +135,37 @@ def body_pose_command_position_error_tanh(
     return 1.0 - torch.tanh(distance / std)
 
 
+def body_pose_command_position_error_w_l2(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize body-position error to a command term's world-frame target."""
+    return _body_pose_command_position_distance_w(env, command_name, asset_cfg)
+
+
+def body_pose_command_position_error_w_exp(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    std: float,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Reward body-position tracking against a command term's world-frame target."""
+    distance = _body_pose_command_position_distance_w(env, command_name, asset_cfg)
+    return torch.exp(-torch.square(distance) / std**2)
+
+
+def body_pose_command_position_error_w_tanh(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    std: float,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Reward fine body-position tracking against a command term's world-frame target."""
+    distance = _body_pose_command_position_distance_w(env, command_name, asset_cfg)
+    return 1.0 - torch.tanh(distance / std)
+
+
 def _body_pose_command_orientation_distance(
     env: ManagerBasedRLEnv,
     command_name: str,
@@ -119,6 +174,17 @@ def _body_pose_command_orientation_distance(
     asset: RigidObject = env.scene[asset_cfg.name]
     command = env.command_manager.get_command(command_name)
     target_quat_w = quat_mul(asset.data.root_quat_w, command[:, 3:7])
+    current_quat_w = asset.data.body_quat_w[:, asset_cfg.body_ids[0]]
+    return quat_error_magnitude(current_quat_w, target_quat_w)
+
+
+def _body_pose_command_orientation_distance_w(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    asset: RigidObject = env.scene[asset_cfg.name]
+    _, target_quat_w = _body_pose_command_target_w(env, command_name, asset)
     current_quat_w = asset.data.body_quat_w[:, asset_cfg.body_ids[0]]
     return quat_error_magnitude(current_quat_w, target_quat_w)
 
@@ -140,6 +206,17 @@ def body_pose_command_orientation_error_tanh(
 ) -> torch.Tensor:
     """Reward body-orientation tracking with a broad tanh kernel."""
     distance = _body_pose_command_orientation_distance(env, command_name, asset_cfg)
+    return 1.0 - torch.tanh(distance / std)
+
+
+def body_pose_command_orientation_error_w_tanh(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    std: float,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Reward body-orientation tracking against a command term's world-frame target."""
+    distance = _body_pose_command_orientation_distance_w(env, command_name, asset_cfg)
     return 1.0 - torch.tanh(distance / std)
 
 
