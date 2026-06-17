@@ -4,9 +4,17 @@ import torch
 from typing import TYPE_CHECKING
 
 try:
-    from isaaclab.utils.math import combine_frame_transforms, quat_apply_inverse, quat_error_magnitude, quat_mul, yaw_quat
+    from isaaclab.utils.math import (
+        combine_frame_transforms,
+        euler_xyz_from_quat,
+        quat_apply_inverse,
+        quat_error_magnitude,
+        quat_mul,
+        yaw_quat,
+    )
 except ImportError:
     from isaaclab.utils.math import combine_frame_transforms
+    from isaaclab.utils.math import euler_xyz_from_quat
     from isaaclab.utils.math import quat_error_magnitude, quat_mul
     from isaaclab.utils.math import quat_rotate_inverse as quat_apply_inverse
     from isaaclab.utils.math import yaw_quat
@@ -218,6 +226,36 @@ def body_pose_command_orientation_error_w_tanh(
     """Reward body-orientation tracking against a command term's world-frame target."""
     distance = _body_pose_command_orientation_distance_w(env, command_name, asset_cfg)
     return 1.0 - torch.tanh(distance / std)
+
+
+def _current_posture(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names="torso_link"),
+) -> torch.Tensor:
+    asset: Articulation = env.scene[asset_cfg.name]
+    root_height = asset.data.root_pos_w[:, 2] - env.scene.env_origins[:, 2]
+    _, torso_pitch, _ = euler_xyz_from_quat(asset.data.body_quat_w[:, asset_cfg.body_ids[0]])
+    return torch.stack((root_height, torso_pitch), dim=-1)
+
+
+def root_height_command_error_l2(
+    env: ManagerBasedRLEnv,
+    command_name: str = "posture_command",
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names="torso_link"),
+) -> torch.Tensor:
+    """Penalize root-height tracking error to a posture command."""
+    command = env.command_manager.get_command(command_name)
+    return torch.square(command[:, 0] - _current_posture(env, asset_cfg)[:, 0])
+
+
+def torso_pitch_command_error_l2(
+    env: ManagerBasedRLEnv,
+    command_name: str = "posture_command",
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names="torso_link"),
+) -> torch.Tensor:
+    """Penalize torso-pitch tracking error to a posture command."""
+    command = env.command_manager.get_command(command_name)
+    return torch.square(command[:, 1] - _current_posture(env, asset_cfg)[:, 1])
 
 
 """

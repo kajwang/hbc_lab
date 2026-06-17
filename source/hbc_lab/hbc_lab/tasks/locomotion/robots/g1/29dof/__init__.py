@@ -43,3 +43,14 @@ gym.register(
         "rsl_rl_cfg_entry_point": f"hbc_lab.tasks.locomotion.agents.rsl_rl_ppo_cfg:BasePPORunnerCfg",
     },
 )
+
+gym.register(
+    id="HBC-Isaac-WholeBody-SphericalPosture-Unitree-G1-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.whole_body_spherical_posture_env_cfg:SphericalPostureWholeBodyEnvCfg",
+        "play_env_cfg_entry_point": f"{__name__}.whole_body_spherical_posture_env_cfg:SphericalPostureWholeBodyPlayEnvCfg",
+        "rsl_rl_cfg_entry_point": f"hbc_lab.tasks.locomotion.agents.rsl_rl_ppo_cfg:BasePPORunnerCfg",
+    },
+)

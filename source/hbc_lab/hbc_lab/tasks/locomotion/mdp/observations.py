@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from isaaclab.assets import Articulation
 from isaaclab.managers import SceneEntityCfg
-from isaaclab.utils.math import combine_frame_transforms, subtract_frame_transforms
+from isaaclab.utils.math import combine_frame_transforms, euler_xyz_from_quat, subtract_frame_transforms
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
@@ -98,3 +98,23 @@ def body_pose_command_position_error_w_in_root_frame(
     target_pos_b, _ = subtract_frame_transforms(asset.data.root_pos_w, asset.data.root_quat_w, target_pos_w)
     current_pos_b = body_pose_in_root_frame(env, asset_cfg=asset_cfg, return_key="pos")[:, :3]
     return target_pos_b - current_pos_b
+
+
+def current_posture(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names="torso_link"),
+) -> torch.Tensor:
+    """Return current [root_height, torso_pitch]."""
+    asset: Articulation = env.scene[asset_cfg.name]
+    root_height = asset.data.root_pos_w[:, 2] - env.scene.env_origins[:, 2]
+    _, torso_pitch, _ = euler_xyz_from_quat(asset.data.body_quat_w[:, asset_cfg.body_ids[0]])
+    return torch.stack((root_height, torso_pitch), dim=-1)
+
+
+def posture_command_error(
+    env: ManagerBasedRLEnv,
+    command_name: str = "posture_command",
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", body_names="torso_link"),
+) -> torch.Tensor:
+    """Return posture command minus current posture."""
+    return env.command_manager.get_command(command_name) - current_posture(env, asset_cfg)

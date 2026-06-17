@@ -89,6 +89,22 @@ def _expand_uniform_range(
     return torch.clamp(expanded, limit[0], limit[1]).tolist()
 
 
+def _expand_lower_bound(
+    current: tuple[float, float], limit: tuple[float, float], delta: float, device: str | torch.device
+) -> list[float]:
+    lower = torch.clamp(torch.tensor(current[0], device=device) - delta, limit[0], current[1])
+    upper = torch.clamp(torch.tensor(current[1], device=device), lower, limit[1])
+    return torch.stack((lower, upper)).tolist()
+
+
+def _expand_upper_bound(
+    current: tuple[float, float], limit: tuple[float, float], delta: float, device: str | torch.device
+) -> list[float]:
+    lower = torch.clamp(torch.tensor(current[0], device=device), limit[0], current[1])
+    upper = torch.clamp(torch.tensor(current[1], device=device) + delta, lower, limit[1])
+    return torch.stack((lower, upper)).tolist()
+
+
 def pose_cmd_levels(
     env: ManagerBasedRLEnv,
     env_ids: Sequence[int],
@@ -220,5 +236,49 @@ def spherical_pose_radius_cmd_levels(
             current_width = torch.tensor(current_range[1] - current_range[0], device=env.device)
             limit_width = torch.tensor(limit_range[1] - limit_range[0], device=env.device)
             progress.append(current_width / limit_width)
+
+    return torch.mean(torch.stack(progress)) if progress else torch.tensor(0.0, device=env.device)
+
+
+def posture_cmd_levels(
+    env: ManagerBasedRLEnv,
+    env_ids: Sequence[int],
+    command_name: str = "posture_command",
+    penalty_term_names: tuple[str, ...] = ("track_root_height", "track_torso_pitch"),
+    success_threshold: float = 0.06,
+    root_height_delta: float = 0.03,
+    torso_pitch_delta: float = 0.04,
+) -> torch.Tensor:
+    """Expand root-height and torso-pitch command ranges after posture tracking is reliable."""
+    errors = []
+    for penalty_term_name in penalty_term_names:
+        penalty_term = env.reward_manager.get_term_cfg(penalty_term_name)
+        if penalty_term.weight >= 0.0:
+            continue
+        episode_reward = torch.mean(env.reward_manager._episode_sums[penalty_term_name][env_ids])
+        squared_error = episode_reward / env.max_episode_length_s / penalty_term.weight
+        errors.append(torch.sqrt(torch.clamp(squared_error, min=0.0)))
+
+    tracking_error = torch.mean(torch.stack(errors)) if errors else torch.tensor(float("inf"), device=env.device)
+
+    command_term = env.command_manager.get_term(command_name)
+    ranges = command_term.cfg.ranges
+    limit_ranges = command_term.cfg.limit_ranges
+
+    if env.common_step_counter % env.max_episode_length == 0 and tracking_error < success_threshold:
+        ranges.root_height = _expand_lower_bound(
+            ranges.root_height, limit_ranges.root_height, root_height_delta, env.device
+        )
+        ranges.torso_pitch = _expand_upper_bound(
+            ranges.torso_pitch, limit_ranges.torso_pitch, torso_pitch_delta, env.device
+        )
+
+    progress = []
+    for range_name in ("root_height", "torso_pitch"):
+        current_range = getattr(ranges, range_name)
+        limit_range = getattr(limit_ranges, range_name)
+        current_width = torch.tensor(current_range[1] - current_range[0], device=env.device)
+        limit_width = torch.tensor(limit_range[1] - limit_range[0], device=env.device)
+        progress.append(current_width / limit_width)
 
     return torch.mean(torch.stack(progress)) if progress else torch.tensor(0.0, device=env.device)
