@@ -79,6 +79,8 @@ def _body_pose_command_target_pos_w(
     asset: Articulation,
 ) -> torch.Tensor:
     command_term = env.command_manager.get_term(command_name)
+    if hasattr(command_term, "_update_pose_command_w"):
+        command_term._update_pose_command_w()
     if hasattr(command_term, "pose_command_w"):
         return command_term.pose_command_w[:, :3]
 

@@ -20,12 +20,12 @@ class SphericalPostureWholeBodyCommandsCfg(whole_body_spherical_env_cfg.Spherica
         resampling_time_range=(2.0, 4.0),
         debug_vis=True,
         ranges=mdp.UniformLevelPostureCommandCfg.Ranges(
-            root_height=(0.76, 0.80),
-            torso_pitch=(0.0, 0.12),
+            root_height=(0.70, 0.80),
+            torso_pitch=(0.0, 0.25),
         ),
         limit_ranges=mdp.UniformLevelPostureCommandCfg.Ranges(
-            root_height=(0.55, 0.80),
-            torso_pitch=(0.0, 0.45),
+            root_height=(0.42, 0.80),
+            torso_pitch=(0.0, 0.85),
         ),
     )
 
@@ -83,7 +83,7 @@ class SphericalPostureWholeBodyRewardsCfg(whole_body_spherical_env_cfg.Spherical
     )
     track_root_height = RewTerm(
         func=mdp.root_height_command_error_l2,
-        weight=-10.0,
+        weight=-20.0,
         params={
             "command_name": "posture_command",
             "asset_cfg": SceneEntityCfg("robot", body_names="torso_link"),
@@ -91,7 +91,7 @@ class SphericalPostureWholeBodyRewardsCfg(whole_body_spherical_env_cfg.Spherical
     )
     track_torso_pitch = RewTerm(
         func=mdp.torso_pitch_command_error_l2,
-        weight=-2.0,
+        weight=-8.0,
         params={
             "command_name": "posture_command",
             "asset_cfg": SceneEntityCfg("robot", body_names="torso_link"),
@@ -108,9 +108,9 @@ class SphericalPostureWholeBodyCurriculumCfg(whole_body_spherical_env_cfg.Spheri
         params={
             "command_name": "posture_command",
             "penalty_term_names": ("track_root_height", "track_torso_pitch"),
-            "success_threshold": 0.06,
+            "success_threshold": 0.05,
             "root_height_delta": 0.03,
-            "torso_pitch_delta": 0.04,
+            "torso_pitch_delta": 0.05,
         },
     )
 
@@ -123,6 +123,16 @@ class SphericalPostureWholeBodyEnvCfg(SphericalWholeBodyEnvCfg):
     commands: SphericalPostureWholeBodyCommandsCfg = SphericalPostureWholeBodyCommandsCfg()
     rewards: SphericalPostureWholeBodyRewardsCfg = SphericalPostureWholeBodyRewardsCfg()
     curriculum: SphericalPostureWholeBodyCurriculumCfg = SphericalPostureWholeBodyCurriculumCfg()
+
+    def __post_init__(self):
+        super().__post_init__()
+        for wrist_pose_command in (self.commands.left_wrist_pose, self.commands.right_wrist_pose):
+            wrist_pose_command.anchor_height_command_name = "posture_command"
+            wrist_pose_command.anchor_height_command_index = 0
+            wrist_pose_command.anchor_height_offset = 0.43
+            wrist_pose_command.anchor_pitch_command_name = "posture_command"
+            wrist_pose_command.anchor_pitch_command_index = 1
+            wrist_pose_command.anchor_pitch_scale = 1.0
 
 
 @configclass

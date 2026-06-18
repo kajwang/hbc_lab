@@ -29,6 +29,8 @@ class UniformPostureCommand(CommandTerm):
         self.body_idx = self.asset.find_bodies(cfg.body_name)[0][0]
 
         self.posture_command = torch.zeros(self.num_envs, 2, device=self.device)
+        self.metrics["root_height_command"] = torch.zeros(self.num_envs, device=self.device)
+        self.metrics["torso_pitch_command"] = torch.zeros(self.num_envs, device=self.device)
         self.metrics["root_height_error"] = torch.zeros(self.num_envs, device=self.device)
         self.metrics["torso_pitch_error"] = torch.zeros(self.num_envs, device=self.device)
 
@@ -44,6 +46,8 @@ class UniformPostureCommand(CommandTerm):
 
     def _update_metrics(self):
         error = self.posture_command - self._current_posture()
+        self.metrics["root_height_command"] = self.posture_command[:, 0]
+        self.metrics["torso_pitch_command"] = self.posture_command[:, 1]
         self.metrics["root_height_error"] = torch.abs(error[:, 0])
         self.metrics["torso_pitch_error"] = torch.abs(error[:, 1])
 
@@ -97,7 +101,7 @@ class UniformLevelPostureCommandCfg(CommandTermCfg):
     posture_command_visualizer_cfg: VisualizationMarkersCfg = GREEN_ARROW_X_MARKER_CFG.replace(
         prim_path="/Visuals/Command/posture_command"
     )
-    posture_command_visualizer_cfg.markers["arrow"].scale = (0.1, 0.1, 0.4)
+    posture_command_visualizer_cfg.markers["arrow"].scale = (0.15, 0.15, 0.4)
     posture_command_visualizer_cfg.markers["arrow"].visual_material = sim_utils.PreviewSurfaceCfg(
         diffuse_color=(1.0, 0.05, 0.65),
         emissive_color=(0.25, 0.0, 0.12),

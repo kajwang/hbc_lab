@@ -10,20 +10,28 @@ from isaaclab.managers import CommandTerm, CommandTermCfg
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from isaaclab.markers.config import FRAME_MARKER_CFG
 from isaaclab.utils import configclass
-from isaaclab.utils.math import combine_frame_transforms, compute_pose_error, quat_from_euler_xyz, quat_unique, yaw_quat
+from isaaclab.utils.math import (
+    combine_frame_transforms,
+    compute_pose_error,
+    quat_from_euler_xyz,
+    quat_mul,
+    quat_unique,
+    yaw_quat,
+)
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedEnv
 
 
 class SphericalPoseCommand(CommandTerm):
-    """Shoulder-anchored spherical pose command with fixed world-height anchor."""
+    """Shoulder-anchored spherical pose command with optional fixed world-height anchor."""
 
     cfg: SphericalLevelPoseCommandCfg
 
     def __init__(self, cfg: SphericalLevelPoseCommandCfg, env: ManagerBasedEnv):
         super().__init__(cfg, env)
 
+        self.env = env
         self.robot: Articulation = env.scene[cfg.asset_name]
         self.body_idx = self.robot.find_bodies(cfg.body_name)[0][0]
         self.anchor_body_idx = self.robot.find_bodies(cfg.anchor_body_name)[0][0]
@@ -58,8 +66,25 @@ class SphericalPoseCommand(CommandTerm):
 
     def _anchor_pose_w(self) -> tuple[torch.Tensor, torch.Tensor]:
         anchor_pos_w = self.robot.data.body_pos_w[:, self.anchor_body_idx].clone()
-        anchor_pos_w[:, 2] = self.cfg.fixed_anchor_height
+        if self.cfg.anchor_height_command_name is not None:
+            anchor_height_command = self.env.command_manager.get_command(self.cfg.anchor_height_command_name)
+            anchor_pos_w[:, 2] = (
+                self.env.scene.env_origins[:, 2]
+                + anchor_height_command[:, self.cfg.anchor_height_command_index]
+                + self.cfg.anchor_height_offset
+            )
+        elif self.cfg.fixed_anchor_height is not None:
+            anchor_pos_w[:, 2] = self.cfg.fixed_anchor_height
         anchor_quat_w = yaw_quat(self.robot.data.root_quat_w)
+        if self.cfg.anchor_pitch_command_name is not None:
+            anchor_pitch_command = self.env.command_manager.get_command(self.cfg.anchor_pitch_command_name)
+            anchor_pitch = (
+                anchor_pitch_command[:, self.cfg.anchor_pitch_command_index] * self.cfg.anchor_pitch_scale
+                + self.cfg.anchor_pitch_offset
+            )
+            zeros = torch.zeros(self.num_envs, device=self.device)
+            pitch_quat = quat_from_euler_xyz(zeros, anchor_pitch, zeros)
+            anchor_quat_w = quat_mul(anchor_quat_w, pitch_quat)
         return anchor_pos_w, anchor_quat_w
 
     def _update_pose_command_w(self):
@@ -135,7 +160,14 @@ class SphericalLevelPoseCommandCfg(CommandTermCfg):
     asset_name: str = MISSING
     body_name: str = MISSING
     anchor_body_name: str = MISSING
-    fixed_anchor_height: float = MISSING
+    anchor_height_command_name: str | None = None
+    anchor_height_command_index: int = 0
+    anchor_height_offset: float = 0.0
+    anchor_pitch_command_name: str | None = None
+    anchor_pitch_command_index: int = 1
+    anchor_pitch_scale: float = 1.0
+    anchor_pitch_offset: float = 0.0
+    fixed_anchor_height: float | None = None
     make_quat_unique: bool = False
 
     @configclass

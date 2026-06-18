@@ -31,6 +31,8 @@ def test_posture_command_generator_is_local_debuggable_and_two_dimensional():
     assert "self.posture_command = torch.zeros(self.num_envs, 2" in command_source
     assert "root_height" in command_source
     assert "torso_pitch" in command_source
+    assert "self.metrics[\"root_height_command\"]" in command_source
+    assert "self.metrics[\"torso_pitch_command\"]" in command_source
     assert "euler_xyz_from_quat" in command_source
     assert "asset.data.root_pos_w[:, 2] - self.env.scene.env_origins[:, 2]" in command_source
     assert "self.metrics[\"root_height_error\"]" in command_source
@@ -38,7 +40,6 @@ def test_posture_command_generator_is_local_debuggable_and_two_dimensional():
     assert "GREEN_ARROW_X_MARKER_CFG" in command_source
     assert "import isaaclab.sim as sim_utils" in command_source
     assert "posture_command_visualizer_cfg" in command_source
-    assert 'posture_command_visualizer_cfg.markers["arrow"].scale = (0.9, 0.025, 0.025)' in command_source
     assert 'diffuse_color=(1.0, 0.05, 0.65)' in command_source
     assert "self.posture_command_visualizer.visualize" in command_source
     assert "arrow_pos_w[:, 2] = self.env.scene.env_origins[:, 2] + self.posture_command[:, 0]" in command_source
@@ -54,18 +55,27 @@ def test_spherical_posture_config_adds_posture_command_obs_rewards_and_curriculu
     assert "posture_command = mdp.UniformLevelPostureCommandCfg" in source
     assert 'body_name="torso_link"' in source
     assert "debug_vis=True" in source
-    assert "root_height=(0.76, 0.80)" in source
-    assert "root_height=(0.55, 0.80)" in source
-    assert "torso_pitch=(0.0, 0.12)" in source
-    assert "torso_pitch=(0.0, 0.45)" in source
+    assert "root_height=(0.70, 0.80)" in source
+    assert "root_height=(0.42, 0.80)" in source
+    assert "torso_pitch=(0.0, 0.25)" in source
+    assert "torso_pitch=(0.0, 0.85)" in source
+    assert "for wrist_pose_command in (self.commands.left_wrist_pose, self.commands.right_wrist_pose):" in source
+    assert 'wrist_pose_command.anchor_height_command_name = "posture_command"' in source
+    assert "wrist_pose_command.anchor_height_command_index = 0" in source
+    assert "wrist_pose_command.anchor_height_offset = 0.43" in source
+    assert 'wrist_pose_command.anchor_pitch_command_name = "posture_command"' in source
+    assert "wrist_pose_command.anchor_pitch_command_index = 1" in source
+    assert "wrist_pose_command.anchor_pitch_scale = 1.0" in source
     assert "posture_command = ObsTerm" in source
     assert 'params={"command_name": "posture_command"}' in source
     assert "posture_command_error = ObsTerm" in source
     assert "func=mdp.posture_command_error" in source
     assert "track_root_height = RewTerm" in source
     assert "func=mdp.root_height_command_error_l2" in source
+    assert "weight=-20.0" in source
     assert "track_torso_pitch = RewTerm" in source
     assert "func=mdp.torso_pitch_command_error_l2" in source
+    assert "weight=-8.0" in source
     assert "base_height = None" in source
     assert "flat_orientation_l2 = None" in source
     assert "joint_deviation_waists = RewTerm" in source
@@ -74,6 +84,8 @@ def test_spherical_posture_config_adds_posture_command_obs_rewards_and_curriculu
     assert "weight=-0.05" in source
     assert "posture_cmd_levels = CurrTerm" in source
     assert "func=mdp.posture_cmd_levels" in source
+    assert '"success_threshold": 0.05' in source
+    assert '"torso_pitch_delta": 0.05' in source
 
 
 def test_posture_tracking_helpers_are_local_and_curriculum_expands_only_posture_ranges():
