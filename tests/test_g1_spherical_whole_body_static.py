@@ -44,12 +44,18 @@ def test_spherical_command_generator_is_local_debuggable_and_optionally_fixed_he
     assert "torch.sin(azimuth)" in command_source
     assert "if self.cfg.anchor_height_command_name is not None:" in command_source
     assert "anchor_height_command = self.env.command_manager.get_command(self.cfg.anchor_height_command_name)" in command_source
-    assert "self.env.scene.env_origins[:, 2]" in command_source
-    assert "anchor_height_command[:, self.cfg.anchor_height_command_index]" in command_source
-    assert "self.cfg.anchor_height_offset" in command_source
+    assert "root_cmd_pos_w[:, 2] = (" in command_source
+    assert "root_to_anchor_w = anchor_pos_w - self.robot.data.root_pos_w" in command_source
+    assert "root_to_anchor_yaw = quat_apply_inverse(root_yaw_quat, root_to_anchor_w)" in command_source
+    assert "anchor_offset_b = torch.zeros_like(root_to_anchor_yaw)" in command_source
+    assert "anchor_offset_b[:, 1] = root_to_anchor_yaw[:, 1]" in command_source
+    assert "anchor_offset_b[:, 2] = self.cfg.anchor_height_offset" in command_source
+    assert "anchor_pos_w = root_cmd_pos_w + quat_apply(anchor_quat_w, anchor_offset_b)" in command_source
     assert "elif self.cfg.fixed_anchor_height is not None:" in command_source
     assert "anchor_pos_w[:, 2] = self.cfg.fixed_anchor_height" in command_source
     assert "yaw_quat" in command_source
+    assert "quat_apply" in command_source
+    assert "quat_apply_inverse" in command_source
     assert "quat_mul" in command_source
     assert "if self.cfg.anchor_pitch_command_name is not None:" in command_source
     assert "anchor_pitch_command = self.env.command_manager.get_command(self.cfg.anchor_pitch_command_name)" in command_source

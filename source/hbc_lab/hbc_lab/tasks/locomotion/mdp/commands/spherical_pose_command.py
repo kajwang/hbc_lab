@@ -13,6 +13,8 @@ from isaaclab.utils import configclass
 from isaaclab.utils.math import (
     combine_frame_transforms,
     compute_pose_error,
+    quat_apply,
+    quat_apply_inverse,
     quat_from_euler_xyz,
     quat_mul,
     quat_unique,
@@ -66,16 +68,8 @@ class SphericalPoseCommand(CommandTerm):
 
     def _anchor_pose_w(self) -> tuple[torch.Tensor, torch.Tensor]:
         anchor_pos_w = self.robot.data.body_pos_w[:, self.anchor_body_idx].clone()
-        if self.cfg.anchor_height_command_name is not None:
-            anchor_height_command = self.env.command_manager.get_command(self.cfg.anchor_height_command_name)
-            anchor_pos_w[:, 2] = (
-                self.env.scene.env_origins[:, 2]
-                + anchor_height_command[:, self.cfg.anchor_height_command_index]
-                + self.cfg.anchor_height_offset
-            )
-        elif self.cfg.fixed_anchor_height is not None:
-            anchor_pos_w[:, 2] = self.cfg.fixed_anchor_height
-        anchor_quat_w = yaw_quat(self.robot.data.root_quat_w)
+        root_yaw_quat = yaw_quat(self.robot.data.root_quat_w)
+        anchor_quat_w = root_yaw_quat
         if self.cfg.anchor_pitch_command_name is not None:
             anchor_pitch_command = self.env.command_manager.get_command(self.cfg.anchor_pitch_command_name)
             anchor_pitch = (
@@ -85,6 +79,21 @@ class SphericalPoseCommand(CommandTerm):
             zeros = torch.zeros(self.num_envs, device=self.device)
             pitch_quat = quat_from_euler_xyz(zeros, anchor_pitch, zeros)
             anchor_quat_w = quat_mul(anchor_quat_w, pitch_quat)
+        if self.cfg.anchor_height_command_name is not None:
+            anchor_height_command = self.env.command_manager.get_command(self.cfg.anchor_height_command_name)
+            root_cmd_pos_w = self.robot.data.root_pos_w.clone()
+            root_cmd_pos_w[:, 2] = (
+                self.env.scene.env_origins[:, 2]
+                + anchor_height_command[:, self.cfg.anchor_height_command_index]
+            )
+            root_to_anchor_w = anchor_pos_w - self.robot.data.root_pos_w
+            root_to_anchor_yaw = quat_apply_inverse(root_yaw_quat, root_to_anchor_w)
+            anchor_offset_b = torch.zeros_like(root_to_anchor_yaw)
+            anchor_offset_b[:, 1] = root_to_anchor_yaw[:, 1]
+            anchor_offset_b[:, 2] = self.cfg.anchor_height_offset
+            anchor_pos_w = root_cmd_pos_w + quat_apply(anchor_quat_w, anchor_offset_b)
+        elif self.cfg.fixed_anchor_height is not None:
+            anchor_pos_w[:, 2] = self.cfg.fixed_anchor_height
         return anchor_pos_w, anchor_quat_w
 
     def _update_pose_command_w(self):
