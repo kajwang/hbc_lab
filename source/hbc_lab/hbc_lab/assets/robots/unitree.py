@@ -703,6 +703,105 @@ UNITREE_G1_29DOF_MIMIC_CFG = UnitreeArticulationCfg(
     ],
 )
 
+G1_29DOF_BODY_JOINT_NAMES = [
+    "left_hip_pitch_joint",
+    "left_hip_roll_joint",
+    "left_hip_yaw_joint",
+    "left_knee_joint",
+    "left_ankle_pitch_joint",
+    "left_ankle_roll_joint",
+    "right_hip_pitch_joint",
+    "right_hip_roll_joint",
+    "right_hip_yaw_joint",
+    "right_knee_joint",
+    "right_ankle_pitch_joint",
+    "right_ankle_roll_joint",
+    "waist_yaw_joint",
+    "waist_roll_joint",
+    "waist_pitch_joint",
+    "left_shoulder_pitch_joint",
+    "left_shoulder_roll_joint",
+    "left_shoulder_yaw_joint",
+    "left_elbow_joint",
+    "left_wrist_roll_joint",
+    "left_wrist_pitch_joint",
+    "left_wrist_yaw_joint",
+    "right_shoulder_pitch_joint",
+    "right_shoulder_roll_joint",
+    "right_shoulder_yaw_joint",
+    "right_elbow_joint",
+    "right_wrist_roll_joint",
+    "right_wrist_pitch_joint",
+    "right_wrist_yaw_joint",
+]
+
+G1_DEX3_LEFT_HAND_JOINT_NAMES = [
+    "left_hand_thumb_0_joint",
+    "left_hand_thumb_1_joint",
+    "left_hand_thumb_2_joint",
+    "left_hand_middle_0_joint",
+    "left_hand_middle_1_joint",
+    "left_hand_index_0_joint",
+    "left_hand_index_1_joint",
+]
+
+G1_DEX3_RIGHT_HAND_JOINT_NAMES = [
+    "right_hand_thumb_0_joint",
+    "right_hand_thumb_1_joint",
+    "right_hand_thumb_2_joint",
+    "right_hand_middle_0_joint",
+    "right_hand_middle_1_joint",
+    "right_hand_index_0_joint",
+    "right_hand_index_1_joint",
+]
+
+UNITREE_G1_29DOF_DEX3_CFG = UNITREE_G1_29DOF_CFG.replace(
+    spawn=UnitreeUsdFileCfg(
+        usd_path=f"{UNITREE_MODEL_DIR}/G1/29dof/usd/g1-29dof_wholebody_dex3/g1_29dof_with_dex3_rev_1_0.usd",
+    ),
+    init_state=ArticulationCfg.InitialStateCfg(
+        pos=(0.0, 0.0, 0.8),
+        joint_pos={
+            "left_hip_pitch_joint": -0.1,
+            "right_hip_pitch_joint": -0.1,
+            ".*_knee_joint": 0.3,
+            ".*_ankle_pitch_joint": -0.2,
+            ".*_shoulder_pitch_joint": 0.3,
+            "left_shoulder_roll_joint": 0.25,
+            "right_shoulder_roll_joint": -0.25,
+            ".*_elbow_joint": 0.97,
+            "left_wrist_roll_joint": 0.15,
+            "right_wrist_roll_joint": -0.15,
+            ".*_hand_.*": 0.0,
+        },
+        joint_vel={".*": 0.0},
+    ),
+    actuators={
+        **UNITREE_G1_29DOF_CFG.actuators,
+        "hand": ImplicitActuatorCfg(
+            joint_names_expr=[
+                '.*_hand_thumb_0_joint',
+                '.*_hand_thumb_1_joint',
+                '.*_hand_thumb_2_joint',
+                '.*_hand_middle_0_joint',
+                '.*_hand_middle_1_joint',
+                '.*_hand_index_0_joint',
+                '.*_hand_index_1_joint',
+            ],
+            effort_limit_sim=2.0,
+            velocity_limit_sim=37.0,
+            stiffness=0.5,
+            damping=0.1,
+            armature=0.01,
+        ),
+    },
+    joint_sdk_names=[
+        *G1_29DOF_BODY_JOINT_NAMES,
+        *G1_DEX3_LEFT_HAND_JOINT_NAMES,
+        *G1_DEX3_RIGHT_HAND_JOINT_NAMES,
+    ],
+)
+
 UNITREE_G1_29DOF_MIMIC_ACTION_SCALE = {}
 for a in UNITREE_G1_29DOF_MIMIC_CFG.actuators.values():
     e = a.effort_limit_sim

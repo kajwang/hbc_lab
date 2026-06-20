@@ -54,3 +54,14 @@ gym.register(
         "rsl_rl_cfg_entry_point": f"hbc_lab.tasks.locomotion.agents.rsl_rl_ppo_cfg:BasePPORunnerCfg",
     },
 )
+
+gym.register(
+    id="HBC-Isaac-WholeBody-SphericalPosture-Dex3FixedHands-Unitree-G1-v0",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.whole_body_spherical_posture_dex3_fixed_env_cfg:SphericalPostureDex3FixedHandsEnvCfg",
+        "play_env_cfg_entry_point": f"{__name__}.whole_body_spherical_posture_dex3_fixed_env_cfg:SphericalPostureDex3FixedHandsPlayEnvCfg",
+        "rsl_rl_cfg_entry_point": f"hbc_lab.tasks.locomotion.agents.rsl_rl_ppo_cfg:BasePPORunnerCfg",
+    },
+)
