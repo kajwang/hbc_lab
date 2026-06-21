@@ -23,6 +23,14 @@ def test_rsl_rl_scripts_are_hbc_local_not_robot_lab_delegates():
     assert 'entry_point_key="play_env_cfg_entry_point"' in play_source
 
 
+def test_play_script_accepts_env_and_agent_overrides():
+    play_source = (REPO_ROOT / "scripts/rsl_rl/play.py").read_text()
+
+    assert "args_cli, hydra_args = parser.parse_known_args()" in play_source
+    assert "def _apply_cfg_overrides" in play_source
+    assert "_apply_cfg_overrides(env_cfg, agent_cfg, hydra_args)" in play_source
+
+
 def test_readme_documents_first_training_command():
     readme = (REPO_ROOT / "README.md").read_text()
 

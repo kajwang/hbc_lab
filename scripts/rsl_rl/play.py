@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import os
 import sys
 import time
@@ -40,7 +41,7 @@ parser.add_argument("--use_pretrained_checkpoint", action="store_true", help="Us
 parser.add_argument("--real-time", action="store_true", default=False, help="Run in real-time, if possible.")
 cli_args.add_rsl_rl_args(parser)
 AppLauncher.add_app_launcher_args(parser)
-args_cli = parser.parse_args()
+args_cli, hydra_args = parser.parse_known_args()
 if args_cli.video:
     args_cli.enable_cameras = True
 
@@ -60,6 +61,53 @@ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper, expor
 from isaaclab_tasks.utils import get_checkpoint_path
 
 
+def _parse_override_value(raw_value: str):
+    lowered = raw_value.lower()
+    if lowered == "true":
+        return True
+    if lowered == "false":
+        return False
+    if lowered == "none" or lowered == "null":
+        return None
+    try:
+        return ast.literal_eval(raw_value)
+    except (SyntaxError, ValueError):
+        return raw_value
+
+
+def _set_nested_cfg_value(cfg, dotted_key: str, value) -> None:
+    target = cfg
+    keys = dotted_key.split(".")
+    for key in keys[:-1]:
+        target = target[key] if isinstance(target, dict) else getattr(target, key)
+
+    leaf_key = keys[-1]
+    if isinstance(target, dict):
+        current_value = target.get(leaf_key)
+        target[leaf_key] = tuple(value) if isinstance(current_value, tuple) and isinstance(value, list) else value
+        return
+
+    current_value = getattr(target, leaf_key)
+    if isinstance(current_value, tuple) and isinstance(value, list):
+        value = tuple(value)
+    setattr(target, leaf_key, value)
+
+
+def _apply_cfg_overrides(env_cfg, agent_cfg, overrides: list[str]) -> None:
+    for override in overrides:
+        if "=" not in override:
+            raise ValueError(f"Unsupported play override '{override}'. Expected key=value.")
+        key, raw_value = override.split("=", 1)
+        if key.startswith("env."):
+            _set_nested_cfg_value(env_cfg, key.removeprefix("env."), _parse_override_value(raw_value))
+        elif key.startswith("agent."):
+            _set_nested_cfg_value(agent_cfg, key.removeprefix("agent."), _parse_override_value(raw_value))
+        else:
+            raise ValueError(
+                f"Unsupported play override '{override}'. Use 'env.<field>=...' or 'agent.<field>=...'."
+            )
+
+
 def main():
     """Play with RSL-RL."""
     env_cfg = parse_env_cfg(
@@ -70,6 +118,7 @@ def main():
         entry_point_key="play_env_cfg_entry_point",
     )
     agent_cfg: RslRlOnPolicyRunnerCfg = cli_args.parse_rsl_rl_cfg(args_cli.task, args_cli)
+    _apply_cfg_overrides(env_cfg, agent_cfg, hydra_args)
 
     log_root_path = os.path.abspath(os.path.join("logs", "rsl_rl", agent_cfg.experiment_name))
     print(f"[INFO] Loading experiment from directory: {log_root_path}")

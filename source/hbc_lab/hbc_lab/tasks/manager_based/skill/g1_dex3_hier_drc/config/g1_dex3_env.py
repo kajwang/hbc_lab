@@ -17,7 +17,7 @@ from ..mdp.gripper import Dex3GripperController
 from ..mdp.high_level_actions import HighLevelActionLimits, HighLevelCommandState, decode_high_level_action
 from ..mdp.low_level_observations import G1SphericalPostureLowLevelObsBuilder
 from ..mdp.low_level_policy import LowLevelPolicyWrapper
-from ..mdp.scenes import LEFT_HAND_CONTACT_SENSOR_NAMES, RIGHT_HAND_CONTACT_SENSOR_NAMES
+from ..mdp.scenes import HAND_CENTER_FRAME_NAME, LEFT_HAND_CONTACT_SENSOR_NAMES, RIGHT_HAND_CONTACT_SENSOR_NAMES
 
 
 TARGET_OBJECT_MARKER_CFG = VisualizationMarkersCfg(
@@ -181,11 +181,11 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         self.gripper_controller.apply(self.command_state.left_grip, self.command_state.right_grip)
 
     def _compute_progress(self):
-        robot = self.scene["robot"]
         obj = self.scene["object"]
         object_pos_w = obj.data.root_pos_w
-        left_pos_w = robot.data.body_pos_w[:, self.left_wrist_body_id]
-        right_pos_w = robot.data.body_pos_w[:, self.right_wrist_body_id]
+        hand_center_pos_w = self.scene[HAND_CENTER_FRAME_NAME].data.target_pos_w
+        left_pos_w = hand_center_pos_w[:, 0, :]
+        right_pos_w = hand_center_pos_w[:, 1, :]
         left_distance = torch.norm(left_pos_w - object_pos_w, dim=-1)
         right_distance = torch.norm(right_pos_w - object_pos_w, dim=-1)
         left_components = compute_hand_contact_confidence(

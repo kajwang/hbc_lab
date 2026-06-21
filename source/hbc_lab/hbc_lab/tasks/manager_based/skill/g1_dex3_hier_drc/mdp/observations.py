@@ -10,23 +10,20 @@ from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 from hbc_lab.tasks.locomotion import mdp
 
+from .scenes import HAND_CENTER_FRAME_NAME
 
-def _resolve_wrist_body_ids(env) -> tuple[int, int]:
-    if not hasattr(env, "left_wrist_body_id") or not hasattr(env, "right_wrist_body_id"):
-        robot: Articulation = env.scene["robot"]
-        env.left_wrist_body_id = robot.find_bodies("left_wrist_yaw_link")[0][0]
-        env.right_wrist_body_id = robot.find_bodies("right_wrist_yaw_link")[0][0]
-    return env.left_wrist_body_id, env.right_wrist_body_id
+
+def hand_center_positions_w(env) -> tuple[torch.Tensor, torch.Tensor]:
+    hand_center_pos_w = env.scene[HAND_CENTER_FRAME_NAME].data.target_pos_w
+    return hand_center_pos_w[:, 0, :], hand_center_pos_w[:, 1, :]
 
 
 def object_goal_hand_obs(env) -> torch.Tensor:
     robot: Articulation = env.scene["robot"]
     obj: RigidObject = env.scene["object"]
-    left_wrist_body_id, right_wrist_body_id = _resolve_wrist_body_ids(env)
     object_pos_w = obj.data.root_pos_w
     goal_pos_w = env.object_target_pos_w
-    left_pos_w = robot.data.body_pos_w[:, left_wrist_body_id]
-    right_pos_w = robot.data.body_pos_w[:, right_wrist_body_id]
+    left_pos_w, right_pos_w = hand_center_positions_w(env)
     object_pos_b = quat_apply_inverse(robot.data.root_quat_w, object_pos_w - robot.data.root_pos_w)
     goal_pos_b = quat_apply_inverse(robot.data.root_quat_w, goal_pos_w - robot.data.root_pos_w)
     left_pos_b = quat_apply_inverse(robot.data.root_quat_w, left_pos_w - robot.data.root_pos_w)

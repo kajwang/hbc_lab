@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import isaaclab.sim as sim_utils
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
+from isaaclab.markers.config import FRAME_MARKER_CFG
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sensors import ContactSensorCfg, RayCasterCfg, patterns
+from isaaclab.sensors import ContactSensorCfg, FrameTransformerCfg, RayCasterCfg, patterns
+from isaaclab.sensors.frame_transformer import OffsetCfg
 from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
@@ -33,6 +35,10 @@ RIGHT_HAND_CONTACT_SENSOR_NAMES = (
     "right_hand_thumb_2_contact",
 )
 OBJECT_CONTACT_FILTER = ["{ENV_REGEX_NS}/object"]
+HAND_CENTER_FRAME_NAME = "hand_center_frame"
+
+HAND_CENTER_FRAME_MARKER_CFG = FRAME_MARKER_CFG.replace(prim_path="/Visuals/G1Dex3HierDrc/hand_center_frame")
+HAND_CENTER_FRAME_MARKER_CFG.markers["frame"].scale = (0.07, 0.07, 0.07)
 
 
 @configclass
@@ -56,6 +62,23 @@ class G1Dex3HierDrcSceneCfg(InteractiveSceneCfg):
     object: RigidObjectCfg = SMALL_CUBE_OBJECT_CFG
     object_init_platform: RigidObjectCfg = OBJECT_INIT_PLATFORM_CFG
     object_target_platform: RigidObjectCfg = OBJECT_TARGET_PLATFORM_CFG
+    hand_center_frame = FrameTransformerCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/torso_link",
+        debug_vis=True,
+        visualizer_cfg=HAND_CENTER_FRAME_MARKER_CFG,
+        target_frames=[
+            FrameTransformerCfg.FrameCfg(
+                prim_path="{ENV_REGEX_NS}/Robot/left_hand_palm_link",
+                name="left_hand_center",
+                offset=OffsetCfg(pos=(0.07, 0.0, 0.0)),
+            ),
+            FrameTransformerCfg.FrameCfg(
+                prim_path="{ENV_REGEX_NS}/Robot/right_hand_palm_link",
+                name="right_hand_center",
+                offset=OffsetCfg(pos=(0.07, 0.0, 0.0)),
+            ),
+        ],
+    )
 
     height_scanner = RayCasterCfg(
         prim_path="{ENV_REGEX_NS}/Robot/torso_link",

@@ -20,6 +20,8 @@ def test_g1_dex3_hier_drc_registers_custom_high_level_env():
     assert 'id="HBC-Isaac-G1-Dex3-HierDrc-Play-v0"' in init_source
     assert "config.g1_dex3_env:G1Dex3HierDrcEnv" in init_source
     assert "config.flat_env_cfg:G1Dex3HierDrcFlatEnvCfg" in init_source
+    assert "play_env_cfg_entry_point" in init_source
+    assert "config.flat_env_cfg:G1Dex3HierDrcFlatPlayEnvCfg" in init_source
     assert "config.agents.rsl_rl_ppo_cfg:G1Dex3HierDrcPPORunnerCfg" in init_source
     assert 'hbc_lab.tasks.manager_based.skill.g1_dex3_hier_drc' in tasks_source
     assert "FixedCmd" not in init_source
@@ -128,8 +130,8 @@ def test_hand_contact_sensors_are_split_then_aggregated_to_hand_level():
 def test_observations_are_safe_during_manager_initialization():
     obs_source = _read(MDP_ROOT / "observations.py")
 
-    assert "def _resolve_wrist_body_ids" in obs_source
-    assert "_resolve_wrist_body_ids(env)" in obs_source
+    assert "def hand_center_positions_w" in obs_source
+    assert "env.scene[HAND_CENTER_FRAME_NAME].data.target_pos_w" in obs_source
     assert "hasattr(env, \"command_state\")" in obs_source
     assert "torch.zeros(env.num_envs, 2" in obs_source
 
@@ -197,6 +199,33 @@ def test_hier_train_visualizes_all_high_level_commands_by_default():
     assert "_resolve_grip_marker_scale" in command_source
 
 
+def test_hier_task_uses_visualized_hand_center_frames_for_object_distance():
+    scene_source = _read(MDP_ROOT / "scenes.py")
+    obs_source = _read(MDP_ROOT / "observations.py")
+    env_source = _read(CONFIG_ROOT / "g1_dex3_env.py")
+    progress_source = env_source.split("def _compute_progress", 1)[1].split("def _check_success", 1)[0]
+
+    assert "FrameTransformerCfg" in scene_source
+    assert "OffsetCfg" in scene_source
+    assert "hand_center_frame = FrameTransformerCfg" in scene_source
+    assert 'prim_path="{ENV_REGEX_NS}/Robot/torso_link"' in scene_source
+    assert 'prim_path="{ENV_REGEX_NS}/Robot/left_hand_palm_link"' in scene_source
+    assert 'name="left_hand_center"' in scene_source
+    assert 'prim_path="{ENV_REGEX_NS}/Robot/right_hand_palm_link"' in scene_source
+    assert 'name="right_hand_center"' in scene_source
+    assert "OffsetCfg(pos=(0.07, 0.0, 0.0))" in scene_source
+    assert "debug_vis=True" in scene_source
+
+    assert "from .scenes import HAND_CENTER_FRAME_NAME" in obs_source
+    assert "HAND_CENTER_FRAME_NAME" in env_source
+    assert "hand_center_pos_w = env.scene[HAND_CENTER_FRAME_NAME].data.target_pos_w" in obs_source
+    assert "hand_center_pos_w = self.scene[HAND_CENTER_FRAME_NAME].data.target_pos_w" in progress_source
+    assert "return hand_center_pos_w[:, 0, :], hand_center_pos_w[:, 1, :]" in obs_source
+    assert "left_pos_w = hand_center_pos_w[:, 0, :]" in progress_source
+    assert "left_wrist_body_id" not in progress_source
+    assert "right_wrist_body_id" not in progress_source
+
+
 def test_hier_object_starts_on_half_meter_platform():
     objects_source = _read(REPO_ROOT / "source/hbc_lab/hbc_lab/assets/objects.py")
     scene_source = _read(MDP_ROOT / "scenes.py")
@@ -204,13 +233,16 @@ def test_hier_object_starts_on_half_meter_platform():
     env_source = _read(CONFIG_ROOT / "g1_dex3_env.py")
 
     assert "OBJECT_PLATFORM_HEIGHT = 0.5" in objects_source
-    assert "OBJECT_PLATFORM_SIZE = (0.35, 0.45, OBJECT_PLATFORM_HEIGHT)" in objects_source
-    assert "OBJECT_ON_PLATFORM_Z = 0.54" in objects_source
+    assert "OBJECT_PLATFORM_SIZE = (0.24, 0.30, OBJECT_PLATFORM_HEIGHT)" in objects_source
+    assert "SMALL_CUBE_SIZE = 0.056" in objects_source
+    assert "SMALL_CUBE_HALF_HEIGHT = 0.5 * SMALL_CUBE_SIZE" in objects_source
+    assert "OBJECT_ON_PLATFORM_Z = OBJECT_PLATFORM_HEIGHT + SMALL_CUBE_HALF_HEIGHT" in objects_source
     assert "OBJECT_INIT_PLATFORM_CFG" in objects_source
     assert "OBJECT_TARGET_PLATFORM_CFG" in objects_source
     assert "kinematic_enabled=True" not in objects_source
     assert "disable_gravity=True" in objects_source
-    assert "mass=1000.0" in objects_source
+    assert "mass=1.0e6" in objects_source
+    assert "size=(SMALL_CUBE_SIZE, SMALL_CUBE_SIZE, SMALL_CUBE_SIZE)" in objects_source
     assert "init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)" in objects_source
     assert "object_init_platform: RigidObjectCfg = OBJECT_INIT_PLATFORM_CFG" in scene_source
     assert "object_target_platform: RigidObjectCfg = OBJECT_TARGET_PLATFORM_CFG" in scene_source
