@@ -14,25 +14,50 @@ from hbc_lab.assets.objects import OBJECT_INIT_PLATFORM_CFG, OBJECT_TARGET_PLATF
 from hbc_lab.assets.robots.unitree import UNITREE_G1_29DOF_DEX3_CFG
 
 
-LEFT_HAND_CONTACT_SENSOR_NAMES = (
+LEFT_HAND_PALM_CONTACT_SENSOR_NAMES = (
     "left_hand_palm_contact",
-    "left_hand_index_0_contact",
-    "left_hand_index_1_contact",
-    "left_hand_middle_0_contact",
-    "left_hand_middle_1_contact",
+)
+LEFT_HAND_THUMB_CONTACT_SENSOR_NAMES = (
     "left_hand_thumb_0_contact",
     "left_hand_thumb_1_contact",
     "left_hand_thumb_2_contact",
 )
-RIGHT_HAND_CONTACT_SENSOR_NAMES = (
+LEFT_HAND_INDEX_CONTACT_SENSOR_NAMES = (
+    "left_hand_index_0_contact",
+    "left_hand_index_1_contact",
+)
+LEFT_HAND_MIDDLE_CONTACT_SENSOR_NAMES = (
+    "left_hand_middle_0_contact",
+    "left_hand_middle_1_contact",
+)
+LEFT_HAND_CONTACT_SENSOR_NAMES = (
+    LEFT_HAND_PALM_CONTACT_SENSOR_NAMES
+    + LEFT_HAND_THUMB_CONTACT_SENSOR_NAMES
+    + LEFT_HAND_INDEX_CONTACT_SENSOR_NAMES
+    + LEFT_HAND_MIDDLE_CONTACT_SENSOR_NAMES
+)
+
+RIGHT_HAND_PALM_CONTACT_SENSOR_NAMES = (
     "right_hand_palm_contact",
-    "right_hand_index_0_contact",
-    "right_hand_index_1_contact",
-    "right_hand_middle_0_contact",
-    "right_hand_middle_1_contact",
+)
+RIGHT_HAND_THUMB_CONTACT_SENSOR_NAMES = (
     "right_hand_thumb_0_contact",
     "right_hand_thumb_1_contact",
     "right_hand_thumb_2_contact",
+)
+RIGHT_HAND_INDEX_CONTACT_SENSOR_NAMES = (
+    "right_hand_index_0_contact",
+    "right_hand_index_1_contact",
+)
+RIGHT_HAND_MIDDLE_CONTACT_SENSOR_NAMES = (
+    "right_hand_middle_0_contact",
+    "right_hand_middle_1_contact",
+)
+RIGHT_HAND_CONTACT_SENSOR_NAMES = (
+    RIGHT_HAND_PALM_CONTACT_SENSOR_NAMES
+    + RIGHT_HAND_THUMB_CONTACT_SENSOR_NAMES
+    + RIGHT_HAND_INDEX_CONTACT_SENSOR_NAMES
+    + RIGHT_HAND_MIDDLE_CONTACT_SENSOR_NAMES
 )
 OBJECT_CONTACT_FILTER = ["{ENV_REGEX_NS}/object"]
 HAND_CENTER_FRAME_NAME = "hand_center_frame"

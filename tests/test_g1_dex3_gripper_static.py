@@ -46,7 +46,10 @@ def test_g1_dex3_high_level_gripper_and_contact_progress_modules_are_local():
     assert "def sample_active_hands" in progress_source
     assert "def select_active_hand_value" in progress_source
     assert "def compute_hand_contact_confidence" in progress_source
+    assert "def compute_dex3_hand_contact_components" in progress_source
     assert "def compute_active_hand_grasp_progress" in progress_source
+    assert "opposition" in progress_source
+    assert "finger_count" in progress_source
     assert "active_hand" in progress_source
     assert "ContactLabel" not in progress_source
     assert "thumb_index" not in progress_source

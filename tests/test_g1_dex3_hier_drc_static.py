@@ -119,10 +119,19 @@ def test_hand_contact_sensors_are_split_then_aggregated_to_hand_level():
 
     assert "LEFT_HAND_CONTACT_SENSOR_NAMES" in scene_source
     assert "RIGHT_HAND_CONTACT_SENSOR_NAMES" in scene_source
+    assert "LEFT_HAND_THUMB_CONTACT_SENSOR_NAMES" in scene_source
+    assert "LEFT_HAND_INDEX_CONTACT_SENSOR_NAMES" in scene_source
+    assert "LEFT_HAND_MIDDLE_CONTACT_SENSOR_NAMES" in scene_source
+    assert "RIGHT_HAND_THUMB_CONTACT_SENSOR_NAMES" in scene_source
+    assert "RIGHT_HAND_INDEX_CONTACT_SENSOR_NAMES" in scene_source
+    assert "RIGHT_HAND_MIDDLE_CONTACT_SENSOR_NAMES" in scene_source
     assert "left_hand_object_contact =" not in scene_source
     assert "right_hand_object_contact =" not in scene_source
-    assert "_sum_sensor_group_force(LEFT_HAND_CONTACT_SENSOR_NAMES)" in env_source
-    assert "_sum_sensor_group_force(RIGHT_HAND_CONTACT_SENSOR_NAMES)" in env_source
+    assert "compute_dex3_hand_contact_components" in env_source
+    assert "thumb_names = LEFT_HAND_THUMB_CONTACT_SENSOR_NAMES" in env_source
+    assert "index_names = RIGHT_HAND_INDEX_CONTACT_SENSOR_NAMES" in env_source
+    assert "self._sum_sensor_group_force(thumb_names)" in env_source
+    assert "self._sum_sensor_group_force(index_names)" in env_source
     assert "self.cfg.scene.left_hand_object_contact" not in cfg_source
     assert "ContactLabel" not in env_source
 
@@ -199,6 +208,27 @@ def test_hier_train_visualizes_all_high_level_commands_by_default():
     assert "_resolve_grip_marker_scale" in command_source
 
 
+def test_hier_flat_debug_task_uses_single_right_hand_and_same_side_object_sampling():
+    flat_cfg_source = _read(CONFIG_ROOT / "flat_env_cfg.py")
+
+    assert "self.commands.high_level.left_hand_probability = 0.0" in flat_cfg_source
+    assert 'self.events.reset_object.params["pose_range"]["y"] = (-0.35, -0.05)' in flat_cfg_source
+
+
+def test_hier_logs_posture_and_workspace_clamp_diagnostics():
+    env_source = _read(CONFIG_ROOT / "g1_dex3_env.py")
+
+    assert "def _log_high_level_diagnostics" in env_source
+    assert "HL/root_height_cmd_mean" in env_source
+    assert "HL/torso_pitch_cmd_mean" in env_source
+    assert "HL/active_wrist_cmd_x_mean" in env_source
+    assert "HL/active_wrist_cmd_y_mean" in env_source
+    assert "HL/active_wrist_cmd_z_mean" in env_source
+    assert "HL/active_wrist_cmd_z_min_ratio" in env_source
+    assert "HL/active_wrist_cmd_x_max_ratio" in env_source
+    assert "self._log_high_level_diagnostics()" in env_source
+
+
 def test_hier_task_uses_visualized_hand_center_frames_for_object_distance():
     scene_source = _read(MDP_ROOT / "scenes.py")
     obs_source = _read(MDP_ROOT / "observations.py")
@@ -224,6 +254,22 @@ def test_hier_task_uses_visualized_hand_center_frames_for_object_distance():
     assert "left_pos_w = hand_center_pos_w[:, 0, :]" in progress_source
     assert "left_wrist_body_id" not in progress_source
     assert "right_wrist_body_id" not in progress_source
+
+
+def test_hier_play_does_not_hard_code_closed_grippers_by_default():
+    cfg_source = _read(CONFIG_ROOT / "g1_dex3_env_cfg.py")
+    flat_cfg_source = _read(CONFIG_ROOT / "flat_env_cfg.py")
+    env_source = _read(CONFIG_ROOT / "g1_dex3_env.py")
+
+    assert "debug_fixed_gripper: bool = False" in cfg_source
+    assert "debug_fixed_left_grip: float = 1.0" in cfg_source
+    assert "debug_fixed_right_grip: float = 1.0" in cfg_source
+    assert "class G1Dex3HierDrcFlatEnvCfg" in flat_cfg_source
+    assert "self.debug_fixed_gripper = True" not in flat_cfg_source
+    assert "def _apply_debug_gripper_override" in env_source
+    assert "self.command_state.left_grip[:] = self.cfg.debug_fixed_left_grip" in env_source
+    assert "self.command_state.right_grip[:] = self.cfg.debug_fixed_right_grip" in env_source
+    assert "self._apply_debug_gripper_override()" in env_source
 
 
 def test_hier_object_starts_on_half_meter_platform():

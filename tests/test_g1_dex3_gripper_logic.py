@@ -15,6 +15,7 @@ from hbc_lab.tasks.manager_based.skill.g1_dex3_hier_drc.mdp.contact_progress imp
     LEFT_HAND,
     RIGHT_HAND,
     compute_active_hand_grasp_progress,
+    compute_dex3_hand_contact_components,
     compute_hand_contact_confidence,
     sample_active_hands,
     select_active_hand_value,
@@ -63,6 +64,52 @@ def test_hand_contact_confidence_uses_whole_hand_object_force():
     assert components.contact[0] > 0.7
     assert components.force[0] == 2.0
     assert components.contact[1] == 0.0
+
+
+def test_dex3_grasp_requires_thumb_and_index_or_middle_opposition():
+    strong_force = torch.tensor([[3.0, 0.0, 0.0]])
+    no_force = torch.zeros(1, 3)
+
+    palm_only = compute_dex3_hand_contact_components(
+        palm_force_w=strong_force,
+        thumb_force_w=no_force,
+        index_force_w=no_force,
+        middle_force_w=no_force,
+        force_threshold=1.0,
+    )
+    opposing_fingers = compute_dex3_hand_contact_components(
+        palm_force_w=no_force,
+        thumb_force_w=strong_force,
+        index_force_w=strong_force,
+        middle_force_w=no_force,
+        force_threshold=1.0,
+    )
+
+    palm_progress = compute_active_hand_grasp_progress(
+        left_components=palm_only,
+        right_components=palm_only,
+        active_hand=torch.tensor([LEFT_HAND]),
+        left_grip=torch.tensor([[1.0]]),
+        right_grip=torch.tensor([[1.0]]),
+        left_distance=torch.tensor([0.05]),
+        right_distance=torch.tensor([0.05]),
+    )
+    pinch_progress = compute_active_hand_grasp_progress(
+        left_components=opposing_fingers,
+        right_components=palm_only,
+        active_hand=torch.tensor([LEFT_HAND]),
+        left_grip=torch.tensor([[1.0]]),
+        right_grip=torch.tensor([[1.0]]),
+        left_distance=torch.tensor([0.05]),
+        right_distance=torch.tensor([0.05]),
+    )
+
+    assert palm_progress.contact.item() > 0.9
+    assert palm_progress.opposition.item() == 0.0
+    assert palm_progress.grasp.item() == 0.0
+    assert pinch_progress.finger_count.item() > 0.9
+    assert pinch_progress.opposition.item() > 0.9
+    assert pinch_progress.grasp.item() > 0.9
 
 
 def test_active_hand_grasp_progress_ignores_non_active_hand_even_if_it_contacts():

@@ -50,6 +50,9 @@ class G1Dex3HierDrcEnvCfg(ManagerBasedRLEnvCfg):
     low_level_policy_path: str = ""
     allow_missing_low_level_policy: bool = False
     target_pose_debug_vis: bool = False
+    debug_fixed_gripper: bool = False
+    debug_fixed_left_grip: float = 1.0
+    debug_fixed_right_grip: float = 1.0
     high_level_decimation: int = 5
     low_level_decimation: int = 4
     action_dim: int = 19

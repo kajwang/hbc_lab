@@ -16,7 +16,14 @@ def couple_reward(env) -> torch.Tensor:
     grasp_window = 1.0 - torch.tanh(env.d_active_hand / 0.18)
     gated_grip = env.active_grip * grasp_window
     early_close_penalty = env.active_grip * (1.0 - grasp_window)
-    return 0.45 * grasp_window + 0.35 * env.c_contact + 0.20 * gated_grip - 0.20 * early_close_penalty
+    return (
+        0.30 * grasp_window
+        + 0.20 * env.c_contact
+        + 0.20 * env.c_finger_count
+        + 0.20 * env.c_opposition
+        + 0.15 * gated_grip
+        - 0.20 * early_close_penalty
+    )
 
 
 def manip_reward(env) -> torch.Tensor:

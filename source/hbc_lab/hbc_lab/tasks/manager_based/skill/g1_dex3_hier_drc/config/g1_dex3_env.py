@@ -9,15 +9,26 @@ from isaaclab.markers.config import FRAME_MARKER_CFG
 from hbc_lab.assets.robots.unitree import G1_29DOF_BODY_JOINT_NAMES
 
 from ..mdp.contact_progress import (
+    HandContactComponents,
     compute_active_hand_grasp_progress,
-    compute_hand_contact_confidence,
+    compute_dex3_hand_contact_components,
 )
 from ..mdp.drc_math import compute_drc_weights, update_ema
 from ..mdp.gripper import Dex3GripperController
 from ..mdp.high_level_actions import HighLevelActionLimits, HighLevelCommandState, decode_high_level_action
 from ..mdp.low_level_observations import G1SphericalPostureLowLevelObsBuilder
 from ..mdp.low_level_policy import LowLevelPolicyWrapper
-from ..mdp.scenes import HAND_CENTER_FRAME_NAME, LEFT_HAND_CONTACT_SENSOR_NAMES, RIGHT_HAND_CONTACT_SENSOR_NAMES
+from ..mdp.scenes import (
+    HAND_CENTER_FRAME_NAME,
+    LEFT_HAND_INDEX_CONTACT_SENSOR_NAMES,
+    LEFT_HAND_MIDDLE_CONTACT_SENSOR_NAMES,
+    LEFT_HAND_PALM_CONTACT_SENSOR_NAMES,
+    LEFT_HAND_THUMB_CONTACT_SENSOR_NAMES,
+    RIGHT_HAND_INDEX_CONTACT_SENSOR_NAMES,
+    RIGHT_HAND_MIDDLE_CONTACT_SENSOR_NAMES,
+    RIGHT_HAND_PALM_CONTACT_SENSOR_NAMES,
+    RIGHT_HAND_THUMB_CONTACT_SENSOR_NAMES,
+)
 
 
 TARGET_OBJECT_MARKER_CFG = VisualizationMarkersCfg(
@@ -56,7 +67,16 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         self.c_contact = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.c_couple = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.c_grasp = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
+        self.c_opposition = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
+        self.c_finger_count = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.active_grip = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
+        self.active_palm_contact = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
+        self.active_thumb_contact = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
+        self.active_index_contact = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
+        self.active_middle_contact = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
+        self.active_finger_contact = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
+        self.active_opposition = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
+        self.active_finger_count = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.left_hand_contact = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.right_hand_contact = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.left_hand_force = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
@@ -116,6 +136,9 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         self._step_right_contact = torch.zeros(self.num_envs, device=self.device)
         self._step_left_force = torch.zeros(self.num_envs, device=self.device)
         self._step_right_force = torch.zeros(self.num_envs, device=self.device)
+        for side in ("left", "right"):
+            for name in ("palm", "thumb", "index", "middle", "finger", "opposition", "finger_count"):
+                setattr(self, f"_step_{side}_{name}", torch.zeros(self.num_envs, device=self.device))
 
     def _get_low_level_joint_info(self):
         if self._joint_ids is None:
@@ -147,18 +170,51 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         force_w[:, 0] = force_mag
         return force_w
 
-    def _accumulate_contact_components(self) -> None:
-        left_force_w = self._sum_sensor_group_force(LEFT_HAND_CONTACT_SENSOR_NAMES)
-        right_force_w = self._sum_sensor_group_force(RIGHT_HAND_CONTACT_SENSOR_NAMES)
-        left_components = compute_hand_contact_confidence(left_force_w, force_threshold=self.cfg.hand_contact_force_threshold)
-        right_components = compute_hand_contact_confidence(
-            right_force_w,
+    def _dex3_hand_contact_components(self, side: str) -> HandContactComponents:
+        if side == "left":
+            palm_names = LEFT_HAND_PALM_CONTACT_SENSOR_NAMES
+            thumb_names = LEFT_HAND_THUMB_CONTACT_SENSOR_NAMES
+            index_names = LEFT_HAND_INDEX_CONTACT_SENSOR_NAMES
+            middle_names = LEFT_HAND_MIDDLE_CONTACT_SENSOR_NAMES
+        elif side == "right":
+            palm_names = RIGHT_HAND_PALM_CONTACT_SENSOR_NAMES
+            thumb_names = RIGHT_HAND_THUMB_CONTACT_SENSOR_NAMES
+            index_names = RIGHT_HAND_INDEX_CONTACT_SENSOR_NAMES
+            middle_names = RIGHT_HAND_MIDDLE_CONTACT_SENSOR_NAMES
+        else:
+            raise ValueError(f"Unsupported hand side: {side!r}")
+        return compute_dex3_hand_contact_components(
+            palm_force_w=self._sum_sensor_group_force(palm_names),
+            thumb_force_w=self._sum_sensor_group_force(thumb_names),
+            index_force_w=self._sum_sensor_group_force(index_names),
+            middle_force_w=self._sum_sensor_group_force(middle_names),
             force_threshold=self.cfg.hand_contact_force_threshold,
         )
+
+    def _max_with_step_components(self, side: str, components: HandContactComponents) -> HandContactComponents:
+        for name in ("contact", "force", "palm", "thumb", "index", "middle", "finger", "opposition", "finger_count"):
+            step_value = getattr(self, f"_step_{side}_{name}")
+            setattr(components, name, torch.maximum(getattr(components, name), step_value))
+        return components
+
+    def _accumulate_contact_components(self) -> None:
+        left_components = self._dex3_hand_contact_components("left")
+        right_components = self._dex3_hand_contact_components("right")
         self._step_left_contact = torch.maximum(self._step_left_contact, left_components.contact)
         self._step_right_contact = torch.maximum(self._step_right_contact, right_components.contact)
         self._step_left_force = torch.maximum(self._step_left_force, left_components.force)
         self._step_right_force = torch.maximum(self._step_right_force, right_components.force)
+        for name in ("palm", "thumb", "index", "middle", "finger", "opposition", "finger_count"):
+            setattr(
+                self,
+                f"_step_left_{name}",
+                torch.maximum(getattr(self, f"_step_left_{name}"), getattr(left_components, name)),
+            )
+            setattr(
+                self,
+                f"_step_right_{name}",
+                torch.maximum(getattr(self, f"_step_right_{name}"), getattr(right_components, name)),
+            )
 
     def _apply_low_level_action(self, low_action: torch.Tensor) -> torch.Tensor:
         robot = self.scene["robot"]
@@ -180,6 +236,39 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
     def _apply_gripper_command(self):
         self.gripper_controller.apply(self.command_state.left_grip, self.command_state.right_grip)
 
+    def _apply_debug_gripper_override(self):
+        if not getattr(self.cfg, "debug_fixed_gripper", False):
+            return
+        self.command_state.left_grip[:] = self.cfg.debug_fixed_left_grip
+        self.command_state.right_grip[:] = self.cfg.debug_fixed_right_grip
+
+    def _active_wrist_pose_and_limits(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        left_active = (self.active_hand == 0).unsqueeze(-1)
+        pose = torch.where(left_active, self.command_state.left_wrist_pose_b, self.command_state.right_wrist_pose_b)
+        left_lower = torch.tensor(self.action_limits.left_workspace_min, device=self.device, dtype=pose.dtype)
+        left_upper = torch.tensor(self.action_limits.left_workspace_max, device=self.device, dtype=pose.dtype)
+        right_lower = torch.tensor(self.action_limits.right_workspace_min, device=self.device, dtype=pose.dtype)
+        right_upper = torch.tensor(self.action_limits.right_workspace_max, device=self.device, dtype=pose.dtype)
+        lower = torch.where(left_active, left_lower.unsqueeze(0), right_lower.unsqueeze(0))
+        upper = torch.where(left_active, left_upper.unsqueeze(0), right_upper.unsqueeze(0))
+        return pose, lower, upper
+
+    def _log_high_level_diagnostics(self):
+        active_wrist_pose_b, lower, upper = self._active_wrist_pose_and_limits()
+        active_wrist_pos_b = active_wrist_pose_b[:, :3]
+        eps = 1.0e-4
+        self.extras["log"]["HL/root_height_cmd_mean"] = self.command_state.posture_command[:, 0].mean()
+        self.extras["log"]["HL/torso_pitch_cmd_mean"] = self.command_state.posture_command[:, 1].mean()
+        self.extras["log"]["HL/active_wrist_cmd_x_mean"] = active_wrist_pos_b[:, 0].mean()
+        self.extras["log"]["HL/active_wrist_cmd_y_mean"] = active_wrist_pos_b[:, 1].mean()
+        self.extras["log"]["HL/active_wrist_cmd_z_mean"] = active_wrist_pos_b[:, 2].mean()
+        self.extras["log"]["HL/active_wrist_cmd_x_min_ratio"] = (active_wrist_pos_b[:, 0] <= lower[:, 0] + eps).float().mean()
+        self.extras["log"]["HL/active_wrist_cmd_x_max_ratio"] = (active_wrist_pos_b[:, 0] >= upper[:, 0] - eps).float().mean()
+        self.extras["log"]["HL/active_wrist_cmd_y_min_ratio"] = (active_wrist_pos_b[:, 1] <= lower[:, 1] + eps).float().mean()
+        self.extras["log"]["HL/active_wrist_cmd_y_max_ratio"] = (active_wrist_pos_b[:, 1] >= upper[:, 1] - eps).float().mean()
+        self.extras["log"]["HL/active_wrist_cmd_z_min_ratio"] = (active_wrist_pos_b[:, 2] <= lower[:, 2] + eps).float().mean()
+        self.extras["log"]["HL/active_wrist_cmd_z_max_ratio"] = (active_wrist_pos_b[:, 2] >= upper[:, 2] - eps).float().mean()
+
     def _compute_progress(self):
         obj = self.scene["object"]
         object_pos_w = obj.data.root_pos_w
@@ -188,16 +277,8 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         right_pos_w = hand_center_pos_w[:, 1, :]
         left_distance = torch.norm(left_pos_w - object_pos_w, dim=-1)
         right_distance = torch.norm(right_pos_w - object_pos_w, dim=-1)
-        left_components = compute_hand_contact_confidence(
-            self._sum_sensor_group_force(LEFT_HAND_CONTACT_SENSOR_NAMES),
-            force_threshold=self.cfg.hand_contact_force_threshold,
-        )
-        right_components = compute_hand_contact_confidence(
-            self._sum_sensor_group_force(RIGHT_HAND_CONTACT_SENSOR_NAMES),
-            force_threshold=self.cfg.hand_contact_force_threshold,
-        )
-        left_components.contact = torch.maximum(left_components.contact, self._step_left_contact)
-        right_components.contact = torch.maximum(right_components.contact, self._step_right_contact)
+        left_components = self._max_with_step_components("left", self._dex3_hand_contact_components("left"))
+        right_components = self._max_with_step_components("right", self._dex3_hand_contact_components("right"))
         progress = compute_active_hand_grasp_progress(
             left_components=left_components,
             right_components=right_components,
@@ -211,12 +292,21 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         )
         self.d_active_hand = progress.distance
         self.active_grip = progress.grip
+        self.active_palm_contact = progress.palm
+        self.active_thumb_contact = progress.thumb
+        self.active_index_contact = progress.index
+        self.active_middle_contact = progress.middle
+        self.active_finger_contact = progress.finger
+        self.active_opposition = progress.opposition
+        self.active_finger_count = progress.finger_count
         self.d_goal = torch.norm(object_pos_w - self.object_target_pos_w, dim=-1)
         self.left_hand_contact = self._step_left_contact
         self.right_hand_contact = self._step_right_contact
         self.left_hand_force = self._step_left_force
         self.right_hand_force = self._step_right_force
         self.c_contact = update_ema(self.c_contact, progress.contact, alpha=0.2)
+        self.c_opposition = update_ema(self.c_opposition, progress.opposition, alpha=0.2)
+        self.c_finger_count = update_ema(self.c_finger_count, progress.finger_count, alpha=0.2)
         self.c_grasp = update_ema(self.c_grasp, progress.grasp, alpha=0.2)
         self.c_couple = update_ema(self.c_couple, progress.grasp, alpha=0.2)
         weights = compute_drc_weights(self.d_active_hand, self.c_couple, alpha=5.0)
@@ -236,7 +326,16 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         self.c_contact[env_ids] = 0.0
         self.c_couple[env_ids] = 0.0
         self.c_grasp[env_ids] = 0.0
+        self.c_opposition[env_ids] = 0.0
+        self.c_finger_count[env_ids] = 0.0
         self.active_grip[env_ids] = 0.0
+        self.active_palm_contact[env_ids] = 0.0
+        self.active_thumb_contact[env_ids] = 0.0
+        self.active_index_contact[env_ids] = 0.0
+        self.active_middle_contact[env_ids] = 0.0
+        self.active_finger_contact[env_ids] = 0.0
+        self.active_opposition[env_ids] = 0.0
+        self.active_finger_count[env_ids] = 0.0
         self.left_hand_contact[env_ids] = 0.0
         self.right_hand_contact[env_ids] = 0.0
         self.left_hand_force[env_ids] = 0.0
@@ -280,6 +379,7 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         self.prev_high_level_action = self.last_high_level_action.clone()
         self.last_high_level_action = torch.clamp(action.to(self.device), -1.0, 1.0)
         self.command_state = decode_high_level_action(self.last_high_level_action, self.command_state, self.action_limits)
+        self._apply_debug_gripper_override()
         self.high_level_command.set_command(
             self.command_state.base_velocity,
             self.command_state.posture_command,
@@ -340,6 +440,8 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         self.extras["log"]["DRC/c_contact_mean"] = self.c_contact.mean()
         self.extras["log"]["DRC/c_couple_mean"] = self.c_couple.mean()
         self.extras["log"]["DRC/c_grasp_mean"] = self.c_grasp.mean()
+        self.extras["log"]["DRC/c_opposition_mean"] = self.c_opposition.mean()
+        self.extras["log"]["DRC/c_finger_count_mean"] = self.c_finger_count.mean()
         self.extras["log"]["DRC/d_goal_mean"] = self.d_goal.mean()
         self.extras["log"]["DRC/W_app_mean"] = self.W_app.mean()
         self.extras["log"]["DRC/W_couple_mean"] = self.W_couple.mean()
@@ -347,7 +449,15 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         self.extras["log"]["Contact/left_hand_mean"] = self.left_hand_contact.mean()
         self.extras["log"]["Contact/right_hand_mean"] = self.right_hand_contact.mean()
         self.extras["log"]["Contact/active_left_ratio"] = (self.active_hand == 0).float().mean()
+        self.extras["log"]["Contact/active_palm_mean"] = self.active_palm_contact.mean()
+        self.extras["log"]["Contact/active_thumb_mean"] = self.active_thumb_contact.mean()
+        self.extras["log"]["Contact/active_index_mean"] = self.active_index_contact.mean()
+        self.extras["log"]["Contact/active_middle_mean"] = self.active_middle_contact.mean()
+        self.extras["log"]["Contact/active_finger_mean"] = self.active_finger_contact.mean()
+        self.extras["log"]["Contact/active_opposition_mean"] = self.active_opposition.mean()
+        self.extras["log"]["Contact/active_finger_count_mean"] = self.active_finger_count.mean()
         self.extras["log"]["HL/left_grip_mean"] = self.command_state.left_grip.mean()
         self.extras["log"]["HL/right_grip_mean"] = self.command_state.right_grip.mean()
+        self._log_high_level_diagnostics()
         self.extras["log"]["Task/success_count"] = self.task_succeeded.sum().float()
         return self.obs_buf, self.reward_buf, self.reset_terminated, self.reset_time_outs, self.extras
