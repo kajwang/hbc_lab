@@ -253,6 +253,33 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         upper = torch.where(left_active, left_upper.unsqueeze(0), right_upper.unsqueeze(0))
         return pose, lower, upper
 
+    def _active_target_tracking_diagnostics(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        robot = self.scene["robot"]
+        obj = self.scene["object"]
+        left_active = (self.active_hand == 0).unsqueeze(-1)
+        left_target_w = self.low_level_obs_builder._target_pos_w(
+            self.command_state.left_wrist_pose_b,
+            "left",
+            self.command_state.posture_command,
+        )
+        right_target_w = self.low_level_obs_builder._target_pos_w(
+            self.command_state.right_wrist_pose_b,
+            "right",
+            self.command_state.posture_command,
+        )
+        active_target_w = torch.where(left_active, left_target_w, right_target_w)
+
+        left_wrist_pos_w = robot.data.body_pos_w[:, self.left_wrist_body_id]
+        right_wrist_pos_w = robot.data.body_pos_w[:, self.right_wrist_body_id]
+        active_wrist_pos_w = torch.where(left_active, left_wrist_pos_w, right_wrist_pos_w)
+
+        hand_center_pos_w = self.scene[HAND_CENTER_FRAME_NAME].data.target_pos_w
+        active_hand_center_w = torch.where(left_active, hand_center_pos_w[:, 0, :], hand_center_pos_w[:, 1, :])
+        target_object_dist = torch.norm(active_target_w - obj.data.root_pos_w, dim=-1)
+        wrist_tracking_error = torch.norm(active_wrist_pos_w - active_target_w, dim=-1)
+        hand_center_to_target_dist = torch.norm(active_hand_center_w - active_target_w, dim=-1)
+        return target_object_dist, wrist_tracking_error, hand_center_to_target_dist
+
     def _log_high_level_diagnostics(self):
         active_wrist_pose_b, lower, upper = self._active_wrist_pose_and_limits()
         active_wrist_pos_b = active_wrist_pose_b[:, :3]
@@ -261,6 +288,7 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         right_grip = self.command_state.right_grip.squeeze(-1)
         active_grip = torch.where(left_active, left_grip, right_grip)
         inactive_grip = torch.where(left_active, right_grip, left_grip)
+        target_object_dist, wrist_tracking_error, hand_center_to_target_dist = self._active_target_tracking_diagnostics()
         eps = 1.0e-4
         self.extras["log"]["HL/root_height_cmd_mean"] = self.command_state.posture_command[:, 0].mean()
         self.extras["log"]["HL/torso_pitch_cmd_mean"] = self.command_state.posture_command[:, 1].mean()
@@ -270,6 +298,9 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         self.extras["log"]["HL/active_grip_mean"] = active_grip.mean()
         self.extras["log"]["HL/inactive_grip_mean"] = inactive_grip.mean()
         self.extras["log"]["HL/active_grip_closed_ratio"] = (active_grip > 0.5).float().mean()
+        self.extras["log"]["HL/active_wrist_target_object_dist"] = target_object_dist.mean()
+        self.extras["log"]["HL/active_wrist_tracking_error"] = wrist_tracking_error.mean()
+        self.extras["log"]["HL/active_hand_center_to_wrist_target_dist"] = hand_center_to_target_dist.mean()
         self.extras["log"]["HL/active_wrist_cmd_x_min_ratio"] = (active_wrist_pos_b[:, 0] <= lower[:, 0] + eps).float().mean()
         self.extras["log"]["HL/active_wrist_cmd_x_max_ratio"] = (active_wrist_pos_b[:, 0] >= upper[:, 0] - eps).float().mean()
         self.extras["log"]["HL/active_wrist_cmd_y_min_ratio"] = (active_wrist_pos_b[:, 1] <= lower[:, 1] + eps).float().mean()
@@ -328,6 +359,14 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         self.success_proximity_count[~success_condition] = 0
         self.task_succeeded = self.success_proximity_count >= self.cfg.success_steps
 
+    def _reset_command_state(self, env_ids: torch.Tensor):
+        self.command_state.base_velocity[env_ids] = self.high_level_command.base_velocity[env_ids]
+        self.command_state.posture_command[env_ids] = self.high_level_command.posture_command[env_ids]
+        self.command_state.left_wrist_pose_b[env_ids] = self.high_level_command.left_wrist_pose_b[env_ids]
+        self.command_state.right_wrist_pose_b[env_ids] = self.high_level_command.right_wrist_pose_b[env_ids]
+        self.command_state.left_grip[env_ids] = self.high_level_command.left_grip[env_ids]
+        self.command_state.right_grip[env_ids] = self.high_level_command.right_grip[env_ids]
+
     def _reset_hier_buffers(self, env_ids: torch.Tensor):
         self.d_active_hand[env_ids] = 0.0
         self.d_goal[env_ids] = 0.0
@@ -358,6 +397,7 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         self._last_low_level_action[env_ids] = 0.0
         self.low_level_obs_builder.reset(env_ids)
         self.active_hand[env_ids] = self.high_level_command.active_hand[env_ids]
+        self._reset_command_state(env_ids)
 
     def _reset_idx(self, env_ids):
         super()._reset_idx(env_ids)

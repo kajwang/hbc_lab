@@ -229,7 +229,24 @@ def test_hier_logs_posture_and_workspace_clamp_diagnostics():
     assert "HL/active_grip_mean" in env_source
     assert "HL/inactive_grip_mean" in env_source
     assert "HL/active_grip_closed_ratio" in env_source
+    assert "HL/active_wrist_target_object_dist" in env_source
+    assert "HL/active_wrist_tracking_error" in env_source
+    assert "HL/active_hand_center_to_wrist_target_dist" in env_source
+    assert "self._active_target_tracking_diagnostics()" in env_source
     assert "self._log_high_level_diagnostics()" in env_source
+
+
+def test_hier_reset_restores_delta_command_state_to_command_defaults():
+    env_source = _read(CONFIG_ROOT / "g1_dex3_env.py")
+
+    assert "def _reset_command_state" in env_source
+    assert "self.command_state.base_velocity[env_ids] = self.high_level_command.base_velocity[env_ids]" in env_source
+    assert "self.command_state.posture_command[env_ids] = self.high_level_command.posture_command[env_ids]" in env_source
+    assert "self.command_state.left_wrist_pose_b[env_ids] = self.high_level_command.left_wrist_pose_b[env_ids]" in env_source
+    assert "self.command_state.right_wrist_pose_b[env_ids] = self.high_level_command.right_wrist_pose_b[env_ids]" in env_source
+    assert "self.command_state.left_grip[env_ids] = self.high_level_command.left_grip[env_ids]" in env_source
+    assert "self.command_state.right_grip[env_ids] = self.high_level_command.right_grip[env_ids]" in env_source
+    assert "self._reset_command_state(env_ids)" in env_source
 
 
 def test_hier_task_uses_visualized_hand_center_frames_for_object_distance():
