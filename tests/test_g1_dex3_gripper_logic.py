@@ -1,4 +1,6 @@
 import sys
+import types
+import importlib.util
 from pathlib import Path
 
 import pytest
@@ -8,6 +10,7 @@ torch = pytest.importorskip("torch")
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = REPO_ROOT / "source/hbc_lab"
+MDP_ROOT = REPO_ROOT / "source/hbc_lab/hbc_lab/tasks/manager_based/skill/g1_dex3_hier_drc/mdp"
 sys.path.insert(0, str(SOURCE_ROOT))
 
 
@@ -25,6 +28,55 @@ from hbc_lab.tasks.manager_based.skill.g1_dex3_hier_drc.mdp.gripper import (  # 
     RIGHT_DEX3_CLOSE_POSE,
     interpolate_dex3_hand_pose,
 )
+
+
+def _load_rewards_module(monkeypatch):
+    dummy_mdp = types.SimpleNamespace(
+        is_alive=lambda *args, **kwargs: None,
+        is_terminated=lambda *args, **kwargs: None,
+        lin_vel_z_l2=lambda *args, **kwargs: None,
+        ang_vel_xy_l2=lambda *args, **kwargs: None,
+        joint_vel_l2=lambda *args, **kwargs: None,
+        undesired_contacts=lambda *args, **kwargs: None,
+    )
+
+    class _DummyCfg:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    monkeypatch.setitem(sys.modules, "isaaclab", types.ModuleType("isaaclab"))
+    monkeypatch.setitem(
+        sys.modules,
+        "isaaclab.managers",
+        types.SimpleNamespace(RewardTermCfg=_DummyCfg, SceneEntityCfg=_DummyCfg),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "isaaclab.utils",
+        types.SimpleNamespace(configclass=lambda cls: cls),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "hbc_lab.tasks.locomotion",
+        types.SimpleNamespace(mdp=dummy_mdp),
+    )
+
+    module_path = MDP_ROOT / "rewards.py"
+    spec = importlib.util.spec_from_file_location("g1_dex3_rewards_under_test", module_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def _reward_env(distance: float, active_grip: float):
+    return types.SimpleNamespace(
+        d_active_hand=torch.tensor([distance]),
+        active_grip=torch.tensor([active_grip]),
+        c_contact=torch.zeros(1),
+        c_finger_count=torch.zeros(1),
+        c_opposition=torch.zeros(1),
+    )
 
 
 def test_interpolate_dex3_hand_pose_maps_zero_to_open_and_one_to_closed():
@@ -134,3 +186,12 @@ def test_active_hand_grasp_progress_ignores_non_active_hand_even_if_it_contacts(
 
     assert progress.contact.item() == 0.0
     assert progress.grasp.item() == 0.0
+
+
+def test_couple_reward_does_not_discourage_active_grip_closure_near_object(monkeypatch):
+    rewards = _load_rewards_module(monkeypatch)
+
+    open_reward = rewards.couple_reward(_reward_env(distance=0.32, active_grip=0.0))
+    closed_reward = rewards.couple_reward(_reward_env(distance=0.32, active_grip=1.0))
+
+    assert closed_reward.item() > open_reward.item()

@@ -256,12 +256,20 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
     def _log_high_level_diagnostics(self):
         active_wrist_pose_b, lower, upper = self._active_wrist_pose_and_limits()
         active_wrist_pos_b = active_wrist_pose_b[:, :3]
+        left_active = self.active_hand == 0
+        left_grip = self.command_state.left_grip.squeeze(-1)
+        right_grip = self.command_state.right_grip.squeeze(-1)
+        active_grip = torch.where(left_active, left_grip, right_grip)
+        inactive_grip = torch.where(left_active, right_grip, left_grip)
         eps = 1.0e-4
         self.extras["log"]["HL/root_height_cmd_mean"] = self.command_state.posture_command[:, 0].mean()
         self.extras["log"]["HL/torso_pitch_cmd_mean"] = self.command_state.posture_command[:, 1].mean()
         self.extras["log"]["HL/active_wrist_cmd_x_mean"] = active_wrist_pos_b[:, 0].mean()
         self.extras["log"]["HL/active_wrist_cmd_y_mean"] = active_wrist_pos_b[:, 1].mean()
         self.extras["log"]["HL/active_wrist_cmd_z_mean"] = active_wrist_pos_b[:, 2].mean()
+        self.extras["log"]["HL/active_grip_mean"] = active_grip.mean()
+        self.extras["log"]["HL/inactive_grip_mean"] = inactive_grip.mean()
+        self.extras["log"]["HL/active_grip_closed_ratio"] = (active_grip > 0.5).float().mean()
         self.extras["log"]["HL/active_wrist_cmd_x_min_ratio"] = (active_wrist_pos_b[:, 0] <= lower[:, 0] + eps).float().mean()
         self.extras["log"]["HL/active_wrist_cmd_x_max_ratio"] = (active_wrist_pos_b[:, 0] >= upper[:, 0] - eps).float().mean()
         self.extras["log"]["HL/active_wrist_cmd_y_min_ratio"] = (active_wrist_pos_b[:, 1] <= lower[:, 1] + eps).float().mean()

@@ -14,15 +14,14 @@ def approach_reward(env) -> torch.Tensor:
 
 def couple_reward(env) -> torch.Tensor:
     grasp_window = 1.0 - torch.tanh(env.d_active_hand / 0.18)
-    gated_grip = env.active_grip * grasp_window
-    early_close_penalty = env.active_grip * (1.0 - grasp_window)
+    active_grip_window = torch.exp(-env.d_active_hand / 0.35)
+    active_grip_bonus = env.active_grip * active_grip_window
     return (
         0.30 * grasp_window
         + 0.20 * env.c_contact
         + 0.20 * env.c_finger_count
         + 0.20 * env.c_opposition
-        + 0.15 * gated_grip
-        - 0.20 * early_close_penalty
+        + 0.18 * active_grip_bonus
     )
 
 
@@ -39,6 +38,7 @@ def hier_drc_reward(env, approach_scale: float = 2.0, couple_scale: float = 5.0,
     env.extras["log"]["DRC/R_app_raw"] = r_app.mean()
     env.extras["log"]["DRC/R_couple_raw"] = r_couple.mean()
     env.extras["log"]["DRC/R_manip_raw"] = r_manip.mean()
+    env.extras["log"]["DRC/active_grip_window_mean"] = torch.exp(-env.d_active_hand / 0.35).mean()
     return env.W_app * approach_scale * r_app + env.W_couple * couple_scale * r_couple + env.W_manip * manip_scale * r_manip
 
 

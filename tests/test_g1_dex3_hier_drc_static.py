@@ -226,6 +226,9 @@ def test_hier_logs_posture_and_workspace_clamp_diagnostics():
     assert "HL/active_wrist_cmd_z_mean" in env_source
     assert "HL/active_wrist_cmd_z_min_ratio" in env_source
     assert "HL/active_wrist_cmd_x_max_ratio" in env_source
+    assert "HL/active_grip_mean" in env_source
+    assert "HL/inactive_grip_mean" in env_source
+    assert "HL/active_grip_closed_ratio" in env_source
     assert "self._log_high_level_diagnostics()" in env_source
 
 
@@ -270,6 +273,14 @@ def test_hier_play_does_not_hard_code_closed_grippers_by_default():
     assert "self.command_state.left_grip[:] = self.cfg.debug_fixed_left_grip" in env_source
     assert "self.command_state.right_grip[:] = self.cfg.debug_fixed_right_grip" in env_source
     assert "self._apply_debug_gripper_override()" in env_source
+
+
+def test_hier_couple_reward_does_not_penalize_active_grip_before_contact():
+    reward_source = _read(MDP_ROOT / "rewards.py")
+
+    assert "early_close_penalty" not in reward_source
+    assert "active_grip_window" in reward_source
+    assert "env.active_grip * active_grip_window" in reward_source
 
 
 def test_hier_object_starts_on_half_meter_platform():
