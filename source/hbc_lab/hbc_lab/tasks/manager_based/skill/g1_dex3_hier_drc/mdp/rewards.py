@@ -6,7 +6,6 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils import configclass
 
 from hbc_lab.tasks.locomotion import mdp
-from hbc_lab.tasks.manager_based.skill.g1_dex3_hier_drc.mdp.high_level_actions import HighLevelActionLimits
 
 
 def approach_reward(env) -> torch.Tensor:
@@ -50,44 +49,23 @@ def command_smoothness(env) -> torch.Tensor:
     return torch.sum(torch.square(env.last_high_level_action - env.prev_high_level_action), dim=-1)
 
 
-def _bound_violation(value: torch.Tensor, lower: torch.Tensor | float, upper: torch.Tensor | float) -> torch.Tensor:
-    return torch.square(torch.clamp(lower - value, min=0.0)) + torch.square(torch.clamp(value - upper, min=0.0))
-
-
-def active_wrist_workspace_penalty(env) -> torch.Tensor:
-    limits = getattr(env, "action_limits", HighLevelActionLimits())
-    left_active = env.active_hand == 0
-    pose_b = torch.where(
-        left_active.unsqueeze(-1),
+def both_wrist_tracking_error_penalty(env) -> torch.Tensor:
+    robot = env.scene["robot"]
+    left_target_w = env.low_level_obs_builder._target_pos_w(
         env.command_state.left_wrist_pose_b,
+        "left",
+        env.command_state.posture_command,
+    )
+    right_target_w = env.low_level_obs_builder._target_pos_w(
         env.command_state.right_wrist_pose_b,
+        "right",
+        env.command_state.posture_command,
     )
-    pos_b = pose_b[:, :3]
-    radius = torch.norm(pos_b, dim=-1)
-    safe_radius = torch.clamp(radius, min=1.0e-6)
-    pitch = torch.asin(torch.clamp(pos_b[:, 2] / safe_radius, min=-1.0, max=1.0))
-    azimuth = torch.atan2(pos_b[:, 1], pos_b[:, 0])
-
-    radius_min, radius_max = limits.wrist_radius_range
-    pitch_min, pitch_max = limits.wrist_pitch_range
-    left_azimuth_min, left_azimuth_max = limits.left_wrist_azimuth_range
-    right_azimuth_min, right_azimuth_max = limits.right_wrist_azimuth_range
-    azimuth_min = torch.where(
-        left_active,
-        torch.full_like(azimuth, left_azimuth_min),
-        torch.full_like(azimuth, right_azimuth_min),
-    )
-    azimuth_max = torch.where(
-        left_active,
-        torch.full_like(azimuth, left_azimuth_max),
-        torch.full_like(azimuth, right_azimuth_max),
-    )
-
-    return (
-        _bound_violation(radius, radius_min, radius_max)
-        + _bound_violation(pitch, pitch_min, pitch_max)
-        + _bound_violation(azimuth, azimuth_min, azimuth_max)
-    )
+    left_wrist_pos_w = robot.data.body_pos_w[:, env.left_wrist_body_id]
+    right_wrist_pos_w = robot.data.body_pos_w[:, env.right_wrist_body_id]
+    left_wrist_error = torch.norm(left_wrist_pos_w - left_target_w, dim=-1)
+    right_wrist_error = torch.norm(right_wrist_pos_w - right_target_w, dim=-1)
+    return left_wrist_error + right_wrist_error
 
 
 def task_success_reward(env) -> torch.Tensor:
@@ -99,7 +77,7 @@ class G1Dex3HierDrcRewardsCfg:
     drc_total = RewTerm(func=hier_drc_reward, weight=1.0)
     task_success = RewTerm(func=task_success_reward, weight=1.0)
     command_smoothness = RewTerm(func=command_smoothness, weight=-0.02)
-    active_wrist_workspace_penalty = RewTerm(func=active_wrist_workspace_penalty, weight=-2.0)
+    both_wrist_tracking_error_penalty = RewTerm(func=both_wrist_tracking_error_penalty, weight=-2.0)
     is_alive = RewTerm(func=mdp.is_alive, weight=1.0)
     is_terminated = RewTerm(func=mdp.is_terminated, weight=-200.0)
     lin_vel_z_l2 = RewTerm(func=mdp.lin_vel_z_l2, weight=-1.0)

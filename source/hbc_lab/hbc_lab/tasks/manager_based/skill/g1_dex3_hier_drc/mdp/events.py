@@ -170,7 +170,7 @@ class G1Dex3HierDrcEventCfg:
         mode="reset",
         params={
             "pose_range": {
-                "x": (0.55, 0.95),
+                "x": (1.5, 2.0),
                 "y": (-0.35, 0.35),
                 "z": (OBJECT_ON_PLATFORM_Z, OBJECT_ON_PLATFORM_Z),
                 "yaw": (-3.14, 3.14),

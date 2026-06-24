@@ -88,6 +88,18 @@ def test_hier_low_level_wrist_targets_use_spherical_shoulder_anchor_frame():
     assert "0.296033062472777" in command_source
 
 
+def test_hier_default_wrist_commands_start_low_and_close_to_body():
+    command_source = _read(MDP_ROOT / "commands.py")
+
+    assert "default_left_wrist_pose_b" in command_source
+    assert "default_right_wrist_pose_b" in command_source
+    assert "0.25," in command_source
+    assert "0.15," in command_source
+    assert "-0.15," in command_source
+    assert "-0.25," in command_source
+    assert "0.35,\n        0.24,\n        -0.05" not in command_source
+
+
 def test_high_level_action_and_command_are_dual_hand_but_contact_label_is_hand_level_only():
     action_source = _read(MDP_ROOT / "high_level_actions.py")
     command_source = _read(MDP_ROOT / "commands.py")
@@ -313,14 +325,22 @@ def test_hier_couple_reward_matches_go2arx5_weighting_with_grail_style_contact_t
     assert "opposition=pinch" in progress_source
 
 
-def test_hier_wrist_commands_use_soft_workspace_penalty_without_xyz_hard_clamp():
+def test_hier_wrist_commands_use_both_hand_tracking_error_penalty_without_xyz_hard_clamp():
     action_source = _read(MDP_ROOT / "high_level_actions.py")
     reward_source = _read(MDP_ROOT / "rewards.py")
 
     assert "_clamp_pose_pos" not in action_source
     assert "pose = _clamp_pose_pos" not in action_source
-    assert "def active_wrist_workspace_penalty" in reward_source
-    assert "active_wrist_workspace_penalty = RewTerm" in reward_source
+    assert "active_wrist_workspace_penalty" not in reward_source
+    assert "def both_wrist_tracking_error_penalty" in reward_source
+    assert "left_target_w = env.low_level_obs_builder._target_pos_w" in reward_source
+    assert "env.command_state.left_wrist_pose_b" in reward_source
+    assert '"left"' in reward_source
+    assert "right_target_w = env.low_level_obs_builder._target_pos_w" in reward_source
+    assert "env.command_state.right_wrist_pose_b" in reward_source
+    assert '"right"' in reward_source
+    assert "left_wrist_error + right_wrist_error" in reward_source
+    assert "both_wrist_tracking_error_penalty = RewTerm" in reward_source
 
 
 def test_hier_object_starts_on_half_meter_platform():
@@ -347,6 +367,8 @@ def test_hier_object_starts_on_half_meter_platform():
     assert "self.object_initial_pos_w[env_ids] = object_pos_w" not in env_source
     assert "self.object_target_pos_w[env_ids] = object_pos_w + target_offset" not in env_source
     assert "func=reset_object_and_support_platforms" in events_source
+    assert '"x": (1.5, 2.0)' in events_source
+    assert '"x": (0.55, 0.95)' not in events_source
     assert "object_goal_radius_range" in events_source
     assert "env.object_initial_pos_w[env_ids] = object_pos_w" in events_source
     assert "env.object_target_pos_w[env_ids] = target_pos_w" in events_source

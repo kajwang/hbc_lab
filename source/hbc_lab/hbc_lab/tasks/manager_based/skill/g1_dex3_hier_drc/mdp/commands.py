@@ -217,18 +217,18 @@ class G1Dex3HierCommandCfg(CommandTermCfg):
     default_root_height: float = 0.8
     default_torso_pitch: float = 0.0
     default_left_wrist_pose_b: tuple[float, float, float, float, float, float, float] = (
-        0.35,
-        0.24,
-        -0.05,
+        0.25,
+        0.15,
+        -0.25,
         0.955177693375944,
         0.0,
         0.0,
         0.296033062472777,
     )
     default_right_wrist_pose_b: tuple[float, float, float, float, float, float, float] = (
-        0.35,
-        -0.24,
-        -0.05,
+        0.25,
+        -0.15,
+        -0.25,
         0.955177693375944,
         0.0,
         0.0,

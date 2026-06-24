@@ -278,38 +278,40 @@ def test_high_level_wrist_delta_is_not_hard_clamped_to_xyz_workspace():
     assert decoded.left_wrist_pose_b[0, 0] > limits.left_workspace_max[0]
 
 
-def test_active_wrist_workspace_penalty_uses_only_active_hand_spherical_workspace(monkeypatch):
+def test_both_wrist_tracking_error_penalty_sums_left_and_right_errors(monkeypatch):
     rewards = _load_rewards_module(monkeypatch)
-    limits = HighLevelActionLimits()
+
+    class _ObsBuilder:
+        def _target_pos_w(self, pose_b, side, posture_command):
+            return pose_b[:, :3]
+
+    robot = types.SimpleNamespace(
+        data=types.SimpleNamespace(
+            body_pos_w=torch.tensor(
+                [
+                    [
+                        [0.0, 0.0, 0.0],
+                        [1.0, 0.0, 0.0],
+                    ]
+                ]
+            )
+        )
+    )
     env = types.SimpleNamespace(
-        active_hand=torch.tensor([0, 1]),
-        action_limits=limits,
+        scene={"robot": robot},
+        left_wrist_body_id=0,
+        right_wrist_body_id=1,
+        low_level_obs_builder=_ObsBuilder(),
         command_state=HighLevelCommandState(
-            base_velocity=torch.zeros(2, 3),
-            posture_command=torch.zeros(2, 2),
-            left_wrist_pose_b=torch.tensor(
-                [
-                    [0.35, 0.25, -0.10, 1.0, 0.0, 0.0, 0.0],
-                    [2.00, 0.25, -0.10, 1.0, 0.0, 0.0, 0.0],
-                ]
-            ),
-            right_wrist_pose_b=torch.tensor(
-                [
-                    [2.00, -0.25, -0.10, 1.0, 0.0, 0.0, 0.0],
-                    [0.35, -0.25, -0.10, 1.0, 0.0, 0.0, 0.0],
-                ]
-            ),
-            left_grip=torch.zeros(2, 1),
-            right_grip=torch.zeros(2, 1),
+            base_velocity=torch.zeros(1, 3),
+            posture_command=torch.zeros(1, 2),
+            left_wrist_pose_b=torch.tensor([[0.10, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]]),
+            right_wrist_pose_b=torch.tensor([[1.00, 0.20, 0.0, 1.0, 0.0, 0.0, 0.0]]),
+            left_grip=torch.zeros(1, 1),
+            right_grip=torch.zeros(1, 1),
         ),
     )
 
-    penalty = rewards.active_wrist_workspace_penalty(env)
+    penalty = rewards.both_wrist_tracking_error_penalty(env)
 
-    assert torch.allclose(penalty, torch.zeros(2))
-
-    env.command_state.left_wrist_pose_b[0, :3] = torch.tensor([0.90, 0.00, 0.00])
-    penalty = rewards.active_wrist_workspace_penalty(env)
-
-    assert penalty[0] > 0.0
-    assert penalty[1] == 0.0
+    assert torch.allclose(penalty, torch.tensor([0.30]), atol=1.0e-6)
