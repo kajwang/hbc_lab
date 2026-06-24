@@ -99,6 +99,7 @@ def compute_dex3_hand_contact_components(
     index_force_w: torch.Tensor,
     middle_force_w: torch.Tensor,
     force_threshold: float,
+    soft_pinch_start: float = 0.2,
 ) -> HandContactComponents:
     """Convert Dex3 palm/finger object contact forces into grasp-relevant contact components."""
     palm_contact, palm_force = _force_contact_confidence(palm_force_w, force_threshold)
@@ -106,10 +107,19 @@ def compute_dex3_hand_contact_components(
     index_contact, index_force = _force_contact_confidence(index_force_w, force_threshold)
     middle_contact, middle_force = _force_contact_confidence(middle_force_w, force_threshold)
 
+    eps = 1e-6
+    support_force_w = index_force_w + middle_force_w
+    support_force = torch.norm(support_force_w, dim=-1)
+    support_contact = torch.maximum(index_contact, middle_contact)
+    thumb_dir = thumb_force_w / (thumb_force.unsqueeze(-1) + eps)
+    support_dir = support_force_w / (support_force.unsqueeze(-1) + eps)
+    cos_sim = torch.sum(thumb_dir * support_dir, dim=-1)
+    pinch_score = torch.clamp((-cos_sim - soft_pinch_start) / (1.0 - soft_pinch_start), min=0.0, max=1.0)
+    pinch = torch.minimum(thumb_contact, support_contact) * pinch_score
+
     finger_contact = torch.maximum(index_contact, middle_contact)
-    opposition = torch.minimum(thumb_contact, finger_contact)
     contact = torch.maximum(torch.maximum(palm_contact, thumb_contact), torch.maximum(index_contact, middle_contact))
-    finger_count = torch.clamp((thumb_contact + index_contact + middle_contact) / 2.0, min=0.0, max=1.0)
+    finger_count = torch.clamp((thumb_contact + index_contact + middle_contact) / 3.0, min=0.0, max=1.0)
     force = palm_force + thumb_force + index_force + middle_force
     return HandContactComponents(
         contact=contact,
@@ -119,7 +129,7 @@ def compute_dex3_hand_contact_components(
         index=index_contact,
         middle=middle_contact,
         finger=finger_contact,
-        opposition=opposition,
+        opposition=pinch,
         finger_count=finger_count,
     )
 

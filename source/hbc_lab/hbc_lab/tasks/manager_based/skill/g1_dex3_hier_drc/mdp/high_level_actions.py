@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import torch
@@ -19,6 +20,10 @@ class HighLevelActionLimits:
     left_workspace_max: tuple[float, float, float] = (0.85, 0.65, 0.35)
     right_workspace_min: tuple[float, float, float] = (0.05, -0.65, -0.55)
     right_workspace_max: tuple[float, float, float] = (0.85, -0.05, 0.35)
+    wrist_radius_range: tuple[float, float] = (0.20, 0.65)
+    wrist_pitch_range: tuple[float, float] = (-0.5 * math.pi, 0.0)
+    left_wrist_azimuth_range: tuple[float, float] = (0.0, 0.5 * math.pi)
+    right_wrist_azimuth_range: tuple[float, float] = (-0.5 * math.pi, 0.0)
 
 
 @dataclass
@@ -62,26 +67,16 @@ def _quat_from_rotvec(rotvec: torch.Tensor) -> torch.Tensor:
     return _normalize_quat(torch.cat((torch.cos(half_angle), rotvec * scale), dim=-1))
 
 
-def _clamp_pose_pos(pose: torch.Tensor, lower: tuple[float, float, float], upper: tuple[float, float, float]) -> torch.Tensor:
-    lower_t = torch.tensor(lower, device=pose.device, dtype=pose.dtype)
-    upper_t = torch.tensor(upper, device=pose.device, dtype=pose.dtype)
-    pose[:, :3] = torch.max(torch.min(pose[:, :3], upper_t), lower_t)
-    return pose
-
-
 def _decode_wrist(
     raw_action: torch.Tensor,
     previous_pose: torch.Tensor,
     start: int,
     limits: HighLevelActionLimits,
-    lower: tuple[float, float, float],
-    upper: tuple[float, float, float],
 ) -> tuple[torch.Tensor, torch.Tensor]:
     pose = previous_pose.clone()
     pose[:, :3] = pose[:, :3] + raw_action[:, start : start + 3] * limits.wrist_delta_scale
     delta_quat = _quat_from_rotvec(raw_action[:, start + 3 : start + 6] * limits.wrist_rot_delta_scale)
     pose[:, 3:] = _normalize_quat(_quat_mul(delta_quat, pose[:, 3:]))
-    pose = _clamp_pose_pos(pose, lower, upper)
     grip = (raw_action[:, start + 6 : start + 7] + 1.0) * 0.5
     return pose, grip.clamp(0.0, 1.0)
 
@@ -114,16 +109,12 @@ def decode_high_level_action(
         previous.left_wrist_pose_b,
         5,
         limits,
-        limits.left_workspace_min,
-        limits.left_workspace_max,
     )
     right_wrist_pose_b, right_grip = _decode_wrist(
         raw_action,
         previous.right_wrist_pose_b,
         12,
         limits,
-        limits.right_workspace_min,
-        limits.right_workspace_max,
     )
 
     return HighLevelCommandState(

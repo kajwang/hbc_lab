@@ -68,6 +68,7 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         self.c_couple = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.c_grasp = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.c_opposition = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
+        self.c_pinch = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.c_finger_count = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.active_grip = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.active_palm_contact = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
@@ -345,6 +346,7 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         self.right_hand_force = self._step_right_force
         self.c_contact = update_ema(self.c_contact, progress.contact, alpha=0.2)
         self.c_opposition = update_ema(self.c_opposition, progress.opposition, alpha=0.2)
+        self.c_pinch = update_ema(self.c_pinch, progress.opposition, alpha=0.2)
         self.c_finger_count = update_ema(self.c_finger_count, progress.finger_count, alpha=0.2)
         self.c_grasp = update_ema(self.c_grasp, progress.grasp, alpha=0.2)
         self.c_couple = update_ema(self.c_couple, progress.grasp, alpha=0.2)
@@ -374,6 +376,7 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         self.c_couple[env_ids] = 0.0
         self.c_grasp[env_ids] = 0.0
         self.c_opposition[env_ids] = 0.0
+        self.c_pinch[env_ids] = 0.0
         self.c_finger_count[env_ids] = 0.0
         self.active_grip[env_ids] = 0.0
         self.active_palm_contact[env_ids] = 0.0
@@ -489,6 +492,7 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         self.extras["log"]["DRC/c_couple_mean"] = self.c_couple.mean()
         self.extras["log"]["DRC/c_grasp_mean"] = self.c_grasp.mean()
         self.extras["log"]["DRC/c_opposition_mean"] = self.c_opposition.mean()
+        self.extras["log"]["DRC/c_pinch_mean"] = self.c_pinch.mean()
         self.extras["log"]["DRC/c_finger_count_mean"] = self.c_finger_count.mean()
         self.extras["log"]["DRC/d_goal_mean"] = self.d_goal.mean()
         self.extras["log"]["DRC/W_app_mean"] = self.W_app.mean()

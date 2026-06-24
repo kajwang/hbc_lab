@@ -28,6 +28,11 @@ from hbc_lab.tasks.manager_based.skill.g1_dex3_hier_drc.mdp.gripper import (  # 
     RIGHT_DEX3_CLOSE_POSE,
     interpolate_dex3_hand_pose,
 )
+from hbc_lab.tasks.manager_based.skill.g1_dex3_hier_drc.mdp.high_level_actions import (  # noqa: E402
+    HighLevelActionLimits,
+    HighLevelCommandState,
+    decode_high_level_action,
+)
 
 
 def _load_rewards_module(monkeypatch):
@@ -76,6 +81,19 @@ def _reward_env(distance: float, active_grip: float):
         c_contact=torch.zeros(1),
         c_finger_count=torch.zeros(1),
         c_opposition=torch.zeros(1),
+        c_pinch=torch.zeros(1),
+    )
+
+
+def _high_level_state(left_pos: tuple[float, float, float], right_pos: tuple[float, float, float]):
+    quat = torch.tensor([[1.0, 0.0, 0.0, 0.0]])
+    return HighLevelCommandState(
+        base_velocity=torch.zeros(1, 3),
+        posture_command=torch.tensor([[0.8, 0.0]]),
+        left_wrist_pose_b=torch.cat((torch.tensor([left_pos]), quat), dim=-1),
+        right_wrist_pose_b=torch.cat((torch.tensor([right_pos]), quat), dim=-1),
+        left_grip=torch.zeros(1, 1),
+        right_grip=torch.zeros(1, 1),
     )
 
 
@@ -120,6 +138,7 @@ def test_hand_contact_confidence_uses_whole_hand_object_force():
 
 def test_dex3_grasp_requires_thumb_and_index_or_middle_opposition():
     strong_force = torch.tensor([[3.0, 0.0, 0.0]])
+    opposing_force = torch.tensor([[-3.0, 0.0, 0.0]])
     no_force = torch.zeros(1, 3)
 
     palm_only = compute_dex3_hand_contact_components(
@@ -132,8 +151,8 @@ def test_dex3_grasp_requires_thumb_and_index_or_middle_opposition():
     opposing_fingers = compute_dex3_hand_contact_components(
         palm_force_w=no_force,
         thumb_force_w=strong_force,
-        index_force_w=strong_force,
-        middle_force_w=no_force,
+        index_force_w=opposing_force,
+        middle_force_w=opposing_force,
         force_threshold=1.0,
     )
 
@@ -164,6 +183,41 @@ def test_dex3_grasp_requires_thumb_and_index_or_middle_opposition():
     assert pinch_progress.grasp.item() > 0.9
 
 
+def test_dex3_contact_count_follows_grail_min_three_contacts_and_pinch_uses_opposing_forces():
+    thumb_force = torch.tensor([[3.0, 0.0, 0.0]])
+    same_direction_force = torch.tensor([[3.0, 0.0, 0.0]])
+    opposing_force = torch.tensor([[-3.0, 0.0, 0.0]])
+    no_force = torch.zeros(1, 3)
+
+    two_contacts = compute_dex3_hand_contact_components(
+        palm_force_w=no_force,
+        thumb_force_w=thumb_force,
+        index_force_w=opposing_force,
+        middle_force_w=no_force,
+        force_threshold=1.0,
+    )
+    same_direction = compute_dex3_hand_contact_components(
+        palm_force_w=no_force,
+        thumb_force_w=thumb_force,
+        index_force_w=same_direction_force,
+        middle_force_w=same_direction_force,
+        force_threshold=1.0,
+    )
+    opposing = compute_dex3_hand_contact_components(
+        palm_force_w=no_force,
+        thumb_force_w=thumb_force,
+        index_force_w=opposing_force,
+        middle_force_w=opposing_force,
+        force_threshold=1.0,
+    )
+
+    assert 0.55 < two_contacts.finger_count.item() < 0.75
+    assert same_direction.finger_count.item() > 0.9
+    assert same_direction.opposition.item() == 0.0
+    assert opposing.finger_count.item() > 0.9
+    assert opposing.opposition.item() > 0.9
+
+
 def test_active_hand_grasp_progress_ignores_non_active_hand_even_if_it_contacts():
     left_components = compute_hand_contact_confidence(
         torch.tensor([[2.0, 0.0, 0.0]]),
@@ -188,10 +242,74 @@ def test_active_hand_grasp_progress_ignores_non_active_hand_even_if_it_contacts(
     assert progress.grasp.item() == 0.0
 
 
-def test_couple_reward_does_not_discourage_active_grip_closure_near_object(monkeypatch):
+def test_couple_reward_penalizes_active_grip_closure_when_far_from_object(monkeypatch):
     rewards = _load_rewards_module(monkeypatch)
 
     open_reward = rewards.couple_reward(_reward_env(distance=0.32, active_grip=0.0))
     closed_reward = rewards.couple_reward(_reward_env(distance=0.32, active_grip=1.0))
 
-    assert closed_reward.item() > open_reward.item()
+    assert closed_reward.item() < open_reward.item()
+
+
+def test_couple_reward_matches_go2arx5_weights_with_grail_style_contact_terms(monkeypatch):
+    rewards = _load_rewards_module(monkeypatch)
+    env = _reward_env(distance=0.0, active_grip=1.0)
+    env.c_finger_count[:] = 1.0
+    env.c_pinch[:] = 0.5
+
+    reward = rewards.couple_reward(env)
+
+    assert torch.allclose(reward, torch.tensor([0.90]), atol=1.0e-6)
+
+    far_closed = rewards.couple_reward(_reward_env(distance=1.0, active_grip=1.0))
+    far_open = rewards.couple_reward(_reward_env(distance=1.0, active_grip=0.0))
+
+    assert far_closed.item() < far_open.item()
+
+
+def test_high_level_wrist_delta_is_not_hard_clamped_to_xyz_workspace():
+    limits = HighLevelActionLimits()
+    previous = _high_level_state(left_pos=(0.84, 0.20, -0.10), right_pos=(0.30, -0.20, -0.10))
+    action = torch.zeros(1, 19)
+    action[:, 5] = 1.0
+
+    decoded = decode_high_level_action(action, previous, limits)
+
+    assert decoded.left_wrist_pose_b[0, 0] > limits.left_workspace_max[0]
+
+
+def test_active_wrist_workspace_penalty_uses_only_active_hand_spherical_workspace(monkeypatch):
+    rewards = _load_rewards_module(monkeypatch)
+    limits = HighLevelActionLimits()
+    env = types.SimpleNamespace(
+        active_hand=torch.tensor([0, 1]),
+        action_limits=limits,
+        command_state=HighLevelCommandState(
+            base_velocity=torch.zeros(2, 3),
+            posture_command=torch.zeros(2, 2),
+            left_wrist_pose_b=torch.tensor(
+                [
+                    [0.35, 0.25, -0.10, 1.0, 0.0, 0.0, 0.0],
+                    [2.00, 0.25, -0.10, 1.0, 0.0, 0.0, 0.0],
+                ]
+            ),
+            right_wrist_pose_b=torch.tensor(
+                [
+                    [2.00, -0.25, -0.10, 1.0, 0.0, 0.0, 0.0],
+                    [0.35, -0.25, -0.10, 1.0, 0.0, 0.0, 0.0],
+                ]
+            ),
+            left_grip=torch.zeros(2, 1),
+            right_grip=torch.zeros(2, 1),
+        ),
+    )
+
+    penalty = rewards.active_wrist_workspace_penalty(env)
+
+    assert torch.allclose(penalty, torch.zeros(2))
+
+    env.command_state.left_wrist_pose_b[0, :3] = torch.tensor([0.90, 0.00, 0.00])
+    penalty = rewards.active_wrist_workspace_penalty(env)
+
+    assert penalty[0] > 0.0
+    assert penalty[1] == 0.0
