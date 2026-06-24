@@ -12,18 +12,54 @@ def approach_reward(env) -> torch.Tensor:
     return torch.exp(-env.d_active_hand / 0.5)
 
 
+# def couple_reward(env) -> torch.Tensor:
+#     grasp_window = 1.0 - torch.tanh(env.d_active_hand / 0.15)
+#     active_grip = env.active_grip
+#     gated_gripper_close = active_grip * grasp_window
+#     early_close_penalty = active_grip * (1.0 - grasp_window)
+#     return (
+#         0.35 * grasp_window
+#         + 0.35 * env.c_finger_count
+#         + 0.20 * env.c_pinch
+#         + 0.10 * gated_gripper_close
+#         - 0.20 * early_close_penalty
+#     )
+
+# Trial 1
 def couple_reward(env) -> torch.Tensor:
-    grasp_window = 1.0 - torch.tanh(env.d_active_hand / 0.15)
-    active_grip = env.active_grip
-    gated_gripper_close = active_grip * grasp_window
-    early_close_penalty = active_grip * (1.0 - grasp_window)
+    d = env.d_active_hand
+    grip = env.active_grip
+
+    grasp_window = 1.0 - torch.tanh(d / 0.35)
+    close_ready = torch.clamp((0.30 - d) / 0.15, min=0.0, max=1.0)
+    gated_close = grip * close_ready
+    early_close = grip * torch.clamp((d - 0.30) / 0.30, min=0.0, max=1.0)
+
     return (
-        0.35 * grasp_window
-        + 0.35 * env.c_finger_count
-        + 0.20 * env.c_pinch
-        + 0.10 * gated_gripper_close
-        - 0.20 * early_close_penalty
+        0.55 * grasp_window
+        + 0.20 * env.c_finger_count
+        + 0.10 * env.c_pinch
+        + 0.10 * gated_close
+        - 0.05 * early_close
     )
+
+# Trial 2
+# def couple_reward(env) -> torch.Tensor:
+#     d = env.d_active_hand
+#     grip = env.active_grip
+
+#     grasp_window = 1.0 - torch.tanh(d / 0.25)
+#     close_ready = torch.clamp((0.25 - d) / 0.12, min=0.0, max=1.0)
+#     gated_close = grip * close_ready
+#     early_close = grip * torch.clamp((d - 0.25) / 0.25, min=0.0, max=1.0)
+
+#     return (
+#         0.40 * grasp_window
+#         + 0.30 * env.c_finger_count
+#         + 0.20 * env.c_pinch
+#         + 0.12 * gated_close
+#         - 0.10 * early_close
+#     )
 
 
 def manip_reward(env) -> torch.Tensor:
