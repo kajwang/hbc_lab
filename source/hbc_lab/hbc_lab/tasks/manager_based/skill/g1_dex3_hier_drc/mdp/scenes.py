@@ -95,12 +95,12 @@ class G1Dex3HierDrcSceneCfg(InteractiveSceneCfg):
             FrameTransformerCfg.FrameCfg(
                 prim_path="{ENV_REGEX_NS}/Robot/left_hand_palm_link",
                 name="left_hand_center",
-                offset=OffsetCfg(pos=(0.07, 0.0, 0.0)),
+                offset=OffsetCfg(pos=(0.06, -0.04, 0.0)),
             ),
             FrameTransformerCfg.FrameCfg(
                 prim_path="{ENV_REGEX_NS}/Robot/right_hand_palm_link",
                 name="right_hand_center",
-                offset=OffsetCfg(pos=(0.07, 0.0, 0.0)),
+                offset=OffsetCfg(pos=(0.06, 0.04, 0.0)),
             ),
         ],
     )

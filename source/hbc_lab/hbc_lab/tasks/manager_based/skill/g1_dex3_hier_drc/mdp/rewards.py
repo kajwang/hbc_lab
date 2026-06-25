@@ -26,22 +26,22 @@ def approach_reward(env) -> torch.Tensor:
 #     )
 
 # Trial 1
-def couple_reward(env) -> torch.Tensor:
-    d = env.d_active_hand
-    grip = env.active_grip
+# def couple_reward(env) -> torch.Tensor:
+#     d = env.d_active_hand
+#     grip = env.active_grip
 
-    grasp_window = 1.0 - torch.tanh(d / 0.35)
-    close_ready = torch.clamp((0.30 - d) / 0.15, min=0.0, max=1.0)
-    gated_close = grip * close_ready
-    early_close = grip * torch.clamp((d - 0.30) / 0.30, min=0.0, max=1.0)
+#     grasp_window = 1.0 - torch.tanh(d / 0.35)
+#     close_ready = torch.clamp((0.30 - d) / 0.15, min=0.0, max=1.0)
+#     gated_close = grip * close_ready
+#     early_close = grip * torch.clamp((d - 0.30) / 0.30, min=0.0, max=1.0)
 
-    return (
-        0.55 * grasp_window
-        + 0.20 * env.c_finger_count
-        + 0.10 * env.c_pinch
-        + 0.10 * gated_close
-        - 0.05 * early_close
-    )
+#     return (
+#         0.55 * grasp_window
+#         + 0.20 * env.c_finger_count
+#         + 0.10 * env.c_pinch
+#         + 0.10 * gated_close
+#         - 0.05 * early_close
+#     )
 
 # Trial 2
 # def couple_reward(env) -> torch.Tensor:
@@ -61,6 +61,28 @@ def couple_reward(env) -> torch.Tensor:
 #         - 0.10 * early_close
 #     )
 
+# Trail 3
+def couple_reward(env) -> torch.Tensor:
+    d = env.d_active_hand
+    gripper_close = env.active_grip
+
+    grasp_window = 1.0 - torch.tanh(d / 0.22)
+
+    gated_gripper_close = gripper_close * grasp_window
+    early_close_penalty = gripper_close * (1.0 - grasp_window)
+
+    contact_gate = torch.clamp(env.c_contact / 0.10, min=0.0, max=1.0)
+    air_close_penalty = gripper_close * (1.0 - contact_gate) * grasp_window
+
+    return (
+        0.45 * grasp_window
+        + 0.25 * env.c_contact
+        + 0.25 * env.c_finger_count
+        + 0.20 * env.c_pinch
+        + 0.12 * gated_gripper_close
+        - 0.08 * early_close_penalty
+        - 0.10 * air_close_penalty
+    )
 
 def manip_reward(env) -> torch.Tensor:
     initial = torch.norm(env.object_initial_pos_w - env.object_target_pos_w, dim=-1)

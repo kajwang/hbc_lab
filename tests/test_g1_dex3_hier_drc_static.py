@@ -275,7 +275,7 @@ def test_hier_task_uses_visualized_hand_center_frames_for_object_distance():
     assert 'name="left_hand_center"' in scene_source
     assert 'prim_path="{ENV_REGEX_NS}/Robot/right_hand_palm_link"' in scene_source
     assert 'name="right_hand_center"' in scene_source
-    assert "OffsetCfg(pos=(0.07, 0.0, 0.0))" in scene_source
+    assert "OffsetCfg(pos=(0.11, 0.0, 0.0))" in scene_source
     assert "debug_vis=True" in scene_source
 
     assert "from .scenes import HAND_CENTER_FRAME_NAME" in obs_source
