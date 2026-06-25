@@ -251,15 +251,29 @@ def test_couple_reward_penalizes_active_grip_closure_when_far_from_object(monkey
     assert closed_reward.item() < open_reward.item()
 
 
-def test_couple_reward_matches_go2arx5_weights_with_grail_style_contact_terms(monkeypatch):
+def test_couple_reward_uses_contact_gate_to_allow_closing_after_touch(monkeypatch):
+    rewards = _load_rewards_module(monkeypatch)
+    open_env = _reward_env(distance=0.32, active_grip=0.0)
+    closed_env = _reward_env(distance=0.32, active_grip=1.0)
+    open_env.c_contact[:] = 0.20
+    closed_env.c_contact[:] = 0.20
+
+    open_reward = rewards.couple_reward(open_env)
+    closed_reward = rewards.couple_reward(closed_env)
+
+    assert closed_reward.item() > open_reward.item()
+
+
+def test_couple_reward_matches_trial3_contact_gated_weights(monkeypatch):
     rewards = _load_rewards_module(monkeypatch)
     env = _reward_env(distance=0.0, active_grip=1.0)
+    env.c_contact[:] = 1.0
     env.c_finger_count[:] = 1.0
     env.c_pinch[:] = 0.5
 
     reward = rewards.couple_reward(env)
 
-    assert torch.allclose(reward, torch.tensor([0.90]), atol=1.0e-6)
+    assert torch.allclose(reward, torch.tensor([1.28]), atol=1.0e-6)
 
     far_closed = rewards.couple_reward(_reward_env(distance=1.0, active_grip=1.0))
     far_open = rewards.couple_reward(_reward_env(distance=1.0, active_grip=0.0))

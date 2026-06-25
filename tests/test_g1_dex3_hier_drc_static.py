@@ -100,6 +100,21 @@ def test_hier_default_wrist_commands_start_low_and_close_to_body():
     assert "0.35,\n        0.24,\n        -0.05" not in command_source
 
 
+def test_trial3_couple_reward_uses_contact_gate_to_allow_close_after_touch():
+    reward_source = _read(MDP_ROOT / "rewards.py")
+
+    assert "def _trial3_couple_terms" in reward_source
+    assert "grasp_window = 1.0 - torch.tanh(d / 0.22)" in reward_source
+    assert "contact_gate = torch.clamp(env.c_contact / 0.10, min=0.0, max=1.0)" in reward_source
+    assert "close_gate = torch.maximum(grasp_window, contact_gate)" in reward_source
+    assert "gated_gripper_close = gripper_close * close_gate" in reward_source
+    assert "early_close_penalty = gripper_close * (1.0 - close_gate)" in reward_source
+    assert "air_close_penalty = gripper_close * (1.0 - contact_gate) * grasp_window" in reward_source
+    assert "0.18 * gated_gripper_close" in reward_source
+    assert "- 0.05 * early_close_penalty" in reward_source
+    assert "- 0.18 * air_close_penalty" in reward_source
+
+
 def test_high_level_action_and_command_are_dual_hand_but_contact_label_is_hand_level_only():
     action_source = _read(MDP_ROOT / "high_level_actions.py")
     command_source = _read(MDP_ROOT / "commands.py")
@@ -275,7 +290,8 @@ def test_hier_task_uses_visualized_hand_center_frames_for_object_distance():
     assert 'name="left_hand_center"' in scene_source
     assert 'prim_path="{ENV_REGEX_NS}/Robot/right_hand_palm_link"' in scene_source
     assert 'name="right_hand_center"' in scene_source
-    assert "OffsetCfg(pos=(0.11, 0.0, 0.0))" in scene_source
+    assert "OffsetCfg(pos=(0.06, -0.04, 0.0))" in scene_source
+    assert "OffsetCfg(pos=(0.06, 0.04, 0.0))" in scene_source
     assert "debug_vis=True" in scene_source
 
     assert "from .scenes import HAND_CENTER_FRAME_NAME" in obs_source

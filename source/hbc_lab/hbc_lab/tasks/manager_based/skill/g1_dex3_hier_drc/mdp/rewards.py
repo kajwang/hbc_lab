@@ -25,63 +25,29 @@ def approach_reward(env) -> torch.Tensor:
 #         - 0.20 * early_close_penalty
 #     )
 
-# Trial 1
-# def couple_reward(env) -> torch.Tensor:
-#     d = env.d_active_hand
-#     grip = env.active_grip
-
-#     grasp_window = 1.0 - torch.tanh(d / 0.35)
-#     close_ready = torch.clamp((0.30 - d) / 0.15, min=0.0, max=1.0)
-#     gated_close = grip * close_ready
-#     early_close = grip * torch.clamp((d - 0.30) / 0.30, min=0.0, max=1.0)
-
-#     return (
-#         0.55 * grasp_window
-#         + 0.20 * env.c_finger_count
-#         + 0.10 * env.c_pinch
-#         + 0.10 * gated_close
-#         - 0.05 * early_close
-#     )
-
-# Trial 2
-# def couple_reward(env) -> torch.Tensor:
-#     d = env.d_active_hand
-#     grip = env.active_grip
-
-#     grasp_window = 1.0 - torch.tanh(d / 0.25)
-#     close_ready = torch.clamp((0.25 - d) / 0.12, min=0.0, max=1.0)
-#     gated_close = grip * close_ready
-#     early_close = grip * torch.clamp((d - 0.25) / 0.25, min=0.0, max=1.0)
-
-#     return (
-#         0.40 * grasp_window
-#         + 0.30 * env.c_finger_count
-#         + 0.20 * env.c_pinch
-#         + 0.12 * gated_close
-#         - 0.10 * early_close
-#     )
-
-# Trail 3
-def couple_reward(env) -> torch.Tensor:
+def _trial3_couple_terms(env) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     d = env.d_active_hand
     gripper_close = env.active_grip
-
     grasp_window = 1.0 - torch.tanh(d / 0.22)
-
-    gated_gripper_close = gripper_close * grasp_window
-    early_close_penalty = gripper_close * (1.0 - grasp_window)
-
     contact_gate = torch.clamp(env.c_contact / 0.10, min=0.0, max=1.0)
+    close_gate = torch.maximum(grasp_window, contact_gate)
+    gated_gripper_close = gripper_close * close_gate
+    early_close_penalty = gripper_close * (1.0 - close_gate)
     air_close_penalty = gripper_close * (1.0 - contact_gate) * grasp_window
+    return grasp_window, contact_gate, gated_gripper_close, early_close_penalty, air_close_penalty
 
+
+# Trial 3: keep go2arx5-style grasp-window coupling, but let real object contact open the close gate.
+def couple_reward(env) -> torch.Tensor:
+    grasp_window, _contact_gate, gated_gripper_close, early_close_penalty, air_close_penalty = _trial3_couple_terms(env)
     return (
         0.45 * grasp_window
-        + 0.25 * env.c_contact
+        + 0.30 * env.c_contact
         + 0.25 * env.c_finger_count
         + 0.20 * env.c_pinch
-        + 0.12 * gated_gripper_close
-        - 0.08 * early_close_penalty
-        - 0.10 * air_close_penalty
+        + 0.18 * gated_gripper_close
+        - 0.05 * early_close_penalty
+        - 0.18 * air_close_penalty
     )
 
 def manip_reward(env) -> torch.Tensor:
@@ -94,12 +60,15 @@ def hier_drc_reward(env, approach_scale: float = 2.0, couple_scale: float = 5.0,
     r_app = approach_reward(env)
     r_couple = couple_reward(env)
     r_manip = manip_reward(env)
-    grasp_window = 1.0 - torch.tanh(env.d_active_hand / 0.15)
+    grasp_window, contact_gate, gated_gripper_close, early_close_penalty, air_close_penalty = _trial3_couple_terms(env)
     env.extras["log"]["DRC/R_app_raw"] = r_app.mean()
     env.extras["log"]["DRC/R_couple_raw"] = r_couple.mean()
     env.extras["log"]["DRC/R_manip_raw"] = r_manip.mean()
-    env.extras["log"]["DRC/gated_gripper_close_mean"] = (env.active_grip * grasp_window).mean()
-    env.extras["log"]["DRC/early_close_penalty_mean"] = (env.active_grip * (1.0 - grasp_window)).mean()
+    env.extras["log"]["DRC/grasp_window_mean"] = grasp_window.mean()
+    env.extras["log"]["DRC/contact_close_gate_mean"] = contact_gate.mean()
+    env.extras["log"]["DRC/gated_gripper_close_mean"] = gated_gripper_close.mean()
+    env.extras["log"]["DRC/early_close_penalty_mean"] = early_close_penalty.mean()
+    env.extras["log"]["DRC/air_close_penalty_mean"] = air_close_penalty.mean()
     return env.W_app * approach_scale * r_app + env.W_couple * couple_scale * r_couple + env.W_manip * manip_scale * r_manip
 
 
