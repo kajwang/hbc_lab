@@ -105,7 +105,10 @@ def test_trial3_couple_reward_uses_contact_gate_to_allow_close_after_touch():
 
     assert "def _trial3_couple_terms" in reward_source
     assert "grasp_window = 1.0 - torch.tanh(d / 0.22)" in reward_source
-    assert "contact_gate = torch.clamp(env.c_contact / 0.10, min=0.0, max=1.0)" in reward_source
+    assert "support_contact = torch.maximum(env.active_index_contact, env.active_middle_contact)" in reward_source
+    assert "thumb_palm_gate = torch.minimum(env.active_thumb_contact, env.active_palm_contact)" in reward_source
+    assert "thumb_support_gate = torch.minimum(env.active_thumb_contact, support_contact)" in reward_source
+    assert "contact_gate = torch.clamp(torch.maximum(thumb_palm_gate, thumb_support_gate) / 0.12" in reward_source
     assert "close_gate = torch.maximum(grasp_window, contact_gate)" in reward_source
     assert "gated_gripper_close = gripper_close * close_gate" in reward_source
     assert "early_close_penalty = gripper_close * (1.0 - close_gate)" in reward_source
@@ -113,6 +116,17 @@ def test_trial3_couple_reward_uses_contact_gate_to_allow_close_after_touch():
     assert "0.18 * gated_gripper_close" in reward_source
     assert "- 0.05 * early_close_penalty" in reward_source
     assert "- 0.18 * air_close_penalty" in reward_source
+
+
+def test_dex3_contact_group_force_preserves_filtered_force_direction_for_pinch():
+    env_source = _read(CONFIG_ROOT / "g1_dex3_env.py")
+
+    assert "force_vec = torch.zeros(self.num_envs, 3, device=self.device)" in env_source
+    assert "force_vec += sensor_force" in env_source
+    assert "force_mag += torch.norm(sensor_force, dim=-1)" in env_source
+    assert "force_dir = force_vec / torch.clamp(torch.norm(force_vec, dim=-1, keepdim=True), min=1.0e-6)" in env_source
+    assert "return force_dir * force_mag.unsqueeze(-1)" in env_source
+    assert "force_w[:, 0] = force_mag" not in env_source
 
 
 def test_high_level_action_and_command_are_dual_hand_but_contact_label_is_hand_level_only():

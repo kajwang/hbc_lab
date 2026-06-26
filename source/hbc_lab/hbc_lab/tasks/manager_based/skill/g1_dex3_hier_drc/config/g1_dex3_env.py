@@ -164,12 +164,14 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         return force
 
     def _sum_sensor_group_force(self, sensor_names: tuple[str, ...]) -> torch.Tensor:
+        force_vec = torch.zeros(self.num_envs, 3, device=self.device)
         force_mag = torch.zeros(self.num_envs, device=self.device)
         for sensor_name in sensor_names:
-            force_mag += torch.norm(self._sum_sensor_force(sensor_name), dim=-1)
-        force_w = torch.zeros(self.num_envs, 3, device=self.device)
-        force_w[:, 0] = force_mag
-        return force_w
+            sensor_force = self._sum_sensor_force(sensor_name)
+            force_vec += sensor_force
+            force_mag += torch.norm(sensor_force, dim=-1)
+        force_dir = force_vec / torch.clamp(torch.norm(force_vec, dim=-1, keepdim=True), min=1.0e-6)
+        return force_dir * force_mag.unsqueeze(-1)
 
     def _dex3_hand_contact_components(self, side: str) -> HandContactComponents:
         if side == "left":

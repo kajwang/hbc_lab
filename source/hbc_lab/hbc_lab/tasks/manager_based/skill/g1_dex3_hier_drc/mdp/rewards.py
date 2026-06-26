@@ -29,7 +29,10 @@ def _trial3_couple_terms(env) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor,
     d = env.d_active_hand
     gripper_close = env.active_grip
     grasp_window = 1.0 - torch.tanh(d / 0.22)
-    contact_gate = torch.clamp(env.c_contact / 0.10, min=0.0, max=1.0)
+    support_contact = torch.maximum(env.active_index_contact, env.active_middle_contact)
+    thumb_palm_gate = torch.minimum(env.active_thumb_contact, env.active_palm_contact)
+    thumb_support_gate = torch.minimum(env.active_thumb_contact, support_contact)
+    contact_gate = torch.clamp(torch.maximum(thumb_palm_gate, thumb_support_gate) / 0.12, min=0.0, max=1.0)
     close_gate = torch.maximum(grasp_window, contact_gate)
     gated_gripper_close = gripper_close * close_gate
     early_close_penalty = gripper_close * (1.0 - close_gate)
