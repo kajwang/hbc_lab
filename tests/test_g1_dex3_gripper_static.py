@@ -24,9 +24,9 @@ def test_g1_dex3_asset_cfg_uses_oasis_hand_asset_and_keeps_body_policy_compatibi
     assert "g1-29dof_wholebody_dex3/g1_29dof_with_dex3_rev_1_0.usd" in unitree_source
     assert '"hand": ImplicitActuatorCfg' in unitree_source
     assert "'.*_hand_thumb_0_joint'" in unitree_source
-    assert "effort_limit_sim=2.0" in unitree_source
-    assert "stiffness=0.5" in unitree_source
-    assert "damping=0.1" in unitree_source
+    assert "effort_limit_sim=10.0" in unitree_source
+    assert "stiffness=20.0" in unitree_source
+    assert "damping=1.0" in unitree_source
     assert '"left_hand_thumb_0_joint"' in unitree_source
     assert '"right_hand_middle_1_joint"' in unitree_source
 

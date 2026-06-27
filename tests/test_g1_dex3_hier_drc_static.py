@@ -157,6 +157,7 @@ def test_hand_contact_sensors_are_split_then_aggregated_to_hand_level():
     scene_source = _read(MDP_ROOT / "scenes.py")
     env_source = _read(CONFIG_ROOT / "g1_dex3_env.py")
     cfg_source = _read(CONFIG_ROOT / "g1_dex3_env_cfg.py")
+    events_source = _read(MDP_ROOT / "events.py")
 
     assert "LEFT_HAND_CONTACT_SENSOR_NAMES" in scene_source
     assert "RIGHT_HAND_CONTACT_SENSOR_NAMES" in scene_source
@@ -173,6 +174,11 @@ def test_hand_contact_sensors_are_split_then_aggregated_to_hand_level():
     assert "index_names = RIGHT_HAND_INDEX_CONTACT_SENSOR_NAMES" in env_source
     assert "self._sum_sensor_group_force(thumb_names)" in env_source
     assert "self._sum_sensor_group_force(index_names)" in env_source
+    assert "hand_physics_material = EventTerm" in events_source
+    assert 'SceneEntityCfg("robot", body_names=".*hand.*")' in events_source
+    assert '"static_friction_range": (1.2, 2.0)' in events_source
+    assert '"dynamic_friction_range": (1.0, 1.5)' in events_source
+    assert 'SceneEntityCfg("robot", body_names="^(?!.*hand.*).*")' in events_source
     assert "self.cfg.scene.left_hand_object_contact" not in cfg_source
     assert "ContactLabel" not in env_source
 
@@ -378,19 +384,33 @@ def test_hier_object_starts_on_half_meter_platform():
     scene_source = _read(MDP_ROOT / "scenes.py")
     events_source = _read(MDP_ROOT / "events.py")
     env_source = _read(CONFIG_ROOT / "g1_dex3_env.py")
+    obs_source = _read(MDP_ROOT / "observations.py")
+    apple_cfg_source = objects_source.split("APPLE_OBJECT_CFG", 1)[1].split("SMALL_CUBE_OBJECT_CFG", 1)[0]
 
     assert "OBJECT_PLATFORM_HEIGHT = 0.5" in objects_source
     assert "OBJECT_PLATFORM_SIZE = (0.24, 0.30, OBJECT_PLATFORM_HEIGHT)" in objects_source
-    assert "SMALL_CUBE_SIZE = 0.056" in objects_source
-    assert "SMALL_CUBE_HALF_HEIGHT = 0.5 * SMALL_CUBE_SIZE" in objects_source
-    assert "OBJECT_ON_PLATFORM_Z = OBJECT_PLATFORM_HEIGHT + SMALL_CUBE_HALF_HEIGHT" in objects_source
+    assert "APPLE_SCALE = 0.007" in objects_source
+    assert "APPLE_OBJECT_FRAME_OFFSET_Z = 4.5 * APPLE_SCALE" in objects_source
+    assert "OBJECT_ROOT_ON_PLATFORM_Z = OBJECT_PLATFORM_HEIGHT" in objects_source
+    assert "APPLE_OBJECT_CFG" in objects_source
+    assert "apple_rigid.usd" in objects_source
+    assert "mass=0.1" in objects_source
+    assert "scale=(APPLE_SCALE, APPLE_SCALE, APPLE_SCALE)" in objects_source
+    assert "physics_material" not in apple_cfg_source
+    assert "object_physics_material = EventTerm" in events_source
+    assert 'SceneEntityCfg("object")' in events_source
+    assert '"static_friction_range": (1.5, 1.5)' in events_source
+    assert '"dynamic_friction_range": (1.2, 1.2)' in events_source
     assert "OBJECT_INIT_PLATFORM_CFG" in objects_source
     assert "OBJECT_TARGET_PLATFORM_CFG" in objects_source
     assert "kinematic_enabled=True" not in objects_source
     assert "disable_gravity=True" in objects_source
     assert "mass=1.0e6" in objects_source
-    assert "size=(SMALL_CUBE_SIZE, SMALL_CUBE_SIZE, SMALL_CUBE_SIZE)" in objects_source
     assert "init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)" in objects_source
+    assert "object: RigidObjectCfg = APPLE_OBJECT_CFG" in scene_source
+    assert "object_frame = FrameTransformerCfg" in scene_source
+    assert 'prim_path="{ENV_REGEX_NS}/object"' in scene_source
+    assert "APPLE_OBJECT_FRAME_OFFSET_Z" in scene_source
     assert "object_init_platform: RigidObjectCfg = OBJECT_INIT_PLATFORM_CFG" in scene_source
     assert "object_target_platform: RigidObjectCfg = OBJECT_TARGET_PLATFORM_CFG" in scene_source
     assert "def reset_object_and_support_platforms" in events_source
@@ -400,10 +420,14 @@ def test_hier_object_starts_on_half_meter_platform():
     assert '"x": (1.5, 2.0)' in events_source
     assert '"x": (0.55, 0.95)' not in events_source
     assert "object_goal_radius_range" in events_source
-    assert "env.object_initial_pos_w[env_ids] = object_pos_w" in events_source
-    assert "env.object_target_pos_w[env_ids] = target_pos_w" in events_source
+    assert "env.object_initial_pos_w[env_ids] = _object_frame_pos_from_root(object_root_pos_w)" in events_source
+    assert "env.object_target_pos_w[env_ids] = _object_frame_pos_from_root(target_root_pos_w)" in events_source
     assert "env.scene[init_platform_cfg.name].write_root_state_to_sim" in events_source
     assert "env.scene[target_platform_cfg.name].write_root_state_to_sim" in events_source
     assert "obj.write_root_state_to_sim" in events_source
+    assert "object_pos_w = env.scene[\"object_frame\"].data.target_pos_w[:, 0, :]" in obs_source
+    assert "object_pos_w = self._object_frame_pos_w()" in env_source
+    assert "self.object_fallen = self._object_fallen()" in env_source
+    assert 'self.extras["log"]["DRC/object_fall_mean"] = self.object_fallen.float().mean()' in env_source
     assert "def _reset_idx(self, env_ids)" in env_source
     assert "super()._reset_idx(env_ids)" in env_source

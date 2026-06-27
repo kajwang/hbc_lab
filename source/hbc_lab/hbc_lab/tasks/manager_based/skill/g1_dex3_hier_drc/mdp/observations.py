@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import torch
-from isaaclab.assets import Articulation, RigidObject
+from isaaclab.assets import Articulation
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.utils import configclass
@@ -20,8 +20,7 @@ def hand_center_positions_w(env) -> tuple[torch.Tensor, torch.Tensor]:
 
 def object_goal_hand_obs(env) -> torch.Tensor:
     robot: Articulation = env.scene["robot"]
-    obj: RigidObject = env.scene["object"]
-    object_pos_w = obj.data.root_pos_w
+    object_pos_w = env.scene["object_frame"].data.target_pos_w[:, 0, :]
     goal_pos_w = env.object_target_pos_w
     left_pos_w, right_pos_w = hand_center_positions_w(env)
     object_pos_b = quat_apply_inverse(robot.data.root_quat_w, object_pos_w - robot.data.root_pos_w)

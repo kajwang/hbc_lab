@@ -10,7 +10,12 @@ from isaaclab.terrains import TerrainImporterCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
-from hbc_lab.assets.objects import OBJECT_INIT_PLATFORM_CFG, OBJECT_TARGET_PLATFORM_CFG, SMALL_CUBE_OBJECT_CFG
+from hbc_lab.assets.objects import (
+    APPLE_OBJECT_CFG,
+    APPLE_OBJECT_FRAME_OFFSET_Z,
+    OBJECT_INIT_PLATFORM_CFG,
+    OBJECT_TARGET_PLATFORM_CFG,
+)
 from hbc_lab.assets.robots.unitree import UNITREE_G1_29DOF_DEX3_CFG
 
 
@@ -64,6 +69,8 @@ HAND_CENTER_FRAME_NAME = "hand_center_frame"
 
 HAND_CENTER_FRAME_MARKER_CFG = FRAME_MARKER_CFG.replace(prim_path="/Visuals/G1Dex3HierDrc/hand_center_frame")
 HAND_CENTER_FRAME_MARKER_CFG.markers["frame"].scale = (0.07, 0.07, 0.07)
+OBJECT_FRAME_MARKER_CFG = FRAME_MARKER_CFG.replace(prim_path="/Visuals/G1Dex3HierDrc/object_frame")
+OBJECT_FRAME_MARKER_CFG.markers["frame"].scale = (0.08, 0.08, 0.08)
 
 
 @configclass
@@ -84,9 +91,21 @@ class G1Dex3HierDrcSceneCfg(InteractiveSceneCfg):
     )
 
     robot: ArticulationCfg = UNITREE_G1_29DOF_DEX3_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
-    object: RigidObjectCfg = SMALL_CUBE_OBJECT_CFG
+    object: RigidObjectCfg = APPLE_OBJECT_CFG
     object_init_platform: RigidObjectCfg = OBJECT_INIT_PLATFORM_CFG
     object_target_platform: RigidObjectCfg = OBJECT_TARGET_PLATFORM_CFG
+    object_frame = FrameTransformerCfg(
+        prim_path="{ENV_REGEX_NS}/object",
+        debug_vis=True,
+        visualizer_cfg=OBJECT_FRAME_MARKER_CFG,
+        target_frames=[
+            FrameTransformerCfg.FrameCfg(
+                prim_path="{ENV_REGEX_NS}/object",
+                name="object",
+                offset=OffsetCfg(pos=(0.0, 0.0, APPLE_OBJECT_FRAME_OFFSET_Z)),
+            ),
+        ],
+    )
     hand_center_frame = FrameTransformerCfg(
         prim_path="{ENV_REGEX_NS}/Robot/torso_link",
         debug_vis=True,

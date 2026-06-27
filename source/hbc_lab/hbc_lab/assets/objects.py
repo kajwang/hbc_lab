@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import isaaclab.sim as sim_utils
 from isaaclab.assets import RigidObjectCfg
 
 
+OBJECTS_MODEL_DIR = Path(__file__).resolve().parent / "models" / "objects"
 OBJECT_PLATFORM_HEIGHT = 0.5
 OBJECT_PLATFORM_SIZE = (0.24, 0.30, OBJECT_PLATFORM_HEIGHT)
 OBJECT_PLATFORM_CENTER_Z = OBJECT_PLATFORM_HEIGHT * 0.5
-SMALL_CUBE_SIZE = 0.056
-SMALL_CUBE_HALF_HEIGHT = 0.5 * SMALL_CUBE_SIZE
-OBJECT_ON_PLATFORM_Z = OBJECT_PLATFORM_HEIGHT + SMALL_CUBE_HALF_HEIGHT
+APPLE_SCALE = 0.007
+APPLE_OBJECT_FRAME_OFFSET_Z = 4.5 * APPLE_SCALE
+OBJECT_ROOT_ON_PLATFORM_Z = OBJECT_PLATFORM_HEIGHT
 
 
 def _make_object_platform_cfg(prim_name: str) -> RigidObjectCfg:
@@ -37,23 +40,20 @@ def _make_object_platform_cfg(prim_name: str) -> RigidObjectCfg:
 OBJECT_INIT_PLATFORM_CFG = _make_object_platform_cfg("object_init_platform")
 OBJECT_TARGET_PLATFORM_CFG = _make_object_platform_cfg("object_target_platform")
 
-SMALL_CUBE_OBJECT_CFG = RigidObjectCfg(
+APPLE_OBJECT_CFG = RigidObjectCfg(
     prim_path="{ENV_REGEX_NS}/object",
-    spawn=sim_utils.CuboidCfg(
-        size=(SMALL_CUBE_SIZE, SMALL_CUBE_SIZE, SMALL_CUBE_SIZE),
+    spawn=sim_utils.UsdFileCfg(
+        usd_path=str(OBJECTS_MODEL_DIR / "fruit" / "apple" / "apple_rigid.usd"),
+        scale=(APPLE_SCALE, APPLE_SCALE, APPLE_SCALE),
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
             max_depenetration_velocity=1.0,
         ),
         collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
-        mass_props=sim_utils.MassPropertiesCfg(mass=0.15),
-        physics_material=sim_utils.RigidBodyMaterialCfg(
-            static_friction=1.0,
-            dynamic_friction=1.0,
-            restitution=0.0,
-        ),
-        visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.9, 0.15, 0.1)),
+        mass_props=sim_utils.MassPropertiesCfg(mass=0.1),
         activate_contact_sensors=True,
     ),
     init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)),
 )
+
+SMALL_CUBE_OBJECT_CFG = APPLE_OBJECT_CFG

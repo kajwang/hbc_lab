@@ -6,6 +6,7 @@ from isaaclab.envs import ManagerBasedRLEnv, ManagerBasedRLEnvCfg, VecEnvStepRet
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
 from isaaclab.markers.config import FRAME_MARKER_CFG
 
+from hbc_lab.assets.objects import OBJECT_PLATFORM_HEIGHT
 from hbc_lab.assets.robots.unitree import G1_29DOF_BODY_JOINT_NAMES
 
 from ..mdp.contact_progress import (
@@ -87,6 +88,7 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         self.W_manip = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.object_initial_pos_w = torch.zeros(cfg.scene.num_envs, 3, device=cfg.sim.device)
         self.object_target_pos_w = torch.zeros(cfg.scene.num_envs, 3, device=cfg.sim.device)
+        self.object_fallen = torch.zeros(cfg.scene.num_envs, dtype=torch.bool, device=cfg.sim.device)
         self.success_proximity_count = torch.zeros(cfg.scene.num_envs, dtype=torch.long, device=cfg.sim.device)
         self.task_succeeded = torch.zeros(cfg.scene.num_envs, dtype=torch.bool, device=cfg.sim.device)
         self.last_high_level_action = torch.zeros(cfg.scene.num_envs, cfg.action_dim, device=cfg.sim.device)
@@ -256,9 +258,16 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         upper = torch.where(left_active, left_upper.unsqueeze(0), right_upper.unsqueeze(0))
         return pose, lower, upper
 
+    def _object_frame_pos_w(self) -> torch.Tensor:
+        return self.scene["object_frame"].data.target_pos_w[:, 0, :]
+
+    def _object_fallen(self) -> torch.Tensor:
+        object_root_z = self.scene["object"].data.root_pos_w[:, 2]
+        fall_threshold = self.scene.env_origins[:, 2] + 0.5 * OBJECT_PLATFORM_HEIGHT
+        return object_root_z < fall_threshold
+
     def _active_target_tracking_diagnostics(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         robot = self.scene["robot"]
-        obj = self.scene["object"]
         left_active = (self.active_hand == 0).unsqueeze(-1)
         left_target_w = self.low_level_obs_builder._target_pos_w(
             self.command_state.left_wrist_pose_b,
@@ -278,7 +287,7 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
 
         hand_center_pos_w = self.scene[HAND_CENTER_FRAME_NAME].data.target_pos_w
         active_hand_center_w = torch.where(left_active, hand_center_pos_w[:, 0, :], hand_center_pos_w[:, 1, :])
-        target_object_dist = torch.norm(active_target_w - obj.data.root_pos_w, dim=-1)
+        target_object_dist = torch.norm(active_target_w - self._object_frame_pos_w(), dim=-1)
         wrist_tracking_error = torch.norm(active_wrist_pos_w - active_target_w, dim=-1)
         hand_center_to_target_dist = torch.norm(active_hand_center_w - active_target_w, dim=-1)
         return target_object_dist, wrist_tracking_error, hand_center_to_target_dist
@@ -312,8 +321,7 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         self.extras["log"]["HL/active_wrist_cmd_z_max_ratio"] = (active_wrist_pos_b[:, 2] >= upper[:, 2] - eps).float().mean()
 
     def _compute_progress(self):
-        obj = self.scene["object"]
-        object_pos_w = obj.data.root_pos_w
+        object_pos_w = self._object_frame_pos_w()
         hand_center_pos_w = self.scene[HAND_CENTER_FRAME_NAME].data.target_pos_w
         left_pos_w = hand_center_pos_w[:, 0, :]
         right_pos_w = hand_center_pos_w[:, 1, :]
@@ -352,6 +360,7 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         self.c_finger_count = update_ema(self.c_finger_count, progress.finger_count, alpha=0.2)
         self.c_grasp = update_ema(self.c_grasp, progress.grasp, alpha=0.2)
         self.c_couple = update_ema(self.c_couple, progress.grasp, alpha=0.2)
+        self.object_fallen = self._object_fallen()
         weights = compute_drc_weights(self.d_active_hand, self.c_couple, alpha=5.0)
         self.W_app = weights[:, 0]
         self.W_couple = weights[:, 1]
@@ -392,6 +401,7 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         self.right_hand_contact[env_ids] = 0.0
         self.left_hand_force[env_ids] = 0.0
         self.right_hand_force[env_ids] = 0.0
+        self.object_fallen[env_ids] = False
         self.W_app[env_ids] = 1.0
         self.W_couple[env_ids] = 0.0
         self.W_manip[env_ids] = 0.0
@@ -497,6 +507,7 @@ class G1Dex3HierDrcEnv(ManagerBasedRLEnv):
         self.extras["log"]["DRC/c_pinch_mean"] = self.c_pinch.mean()
         self.extras["log"]["DRC/c_finger_count_mean"] = self.c_finger_count.mean()
         self.extras["log"]["DRC/d_goal_mean"] = self.d_goal.mean()
+        self.extras["log"]["DRC/object_fall_mean"] = self.object_fallen.float().mean()
         self.extras["log"]["DRC/W_app_mean"] = self.W_app.mean()
         self.extras["log"]["DRC/W_couple_mean"] = self.W_couple.mean()
         self.extras["log"]["DRC/W_manip_mean"] = self.W_manip.mean()

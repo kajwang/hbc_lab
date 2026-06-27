@@ -7,7 +7,7 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils import configclass
 from isaaclab.utils import math as math_utils
 
-from hbc_lab.assets.objects import OBJECT_ON_PLATFORM_Z, OBJECT_PLATFORM_HEIGHT, SMALL_CUBE_HALF_HEIGHT
+from hbc_lab.assets.objects import APPLE_OBJECT_FRAME_OFFSET_Z, OBJECT_PLATFORM_HEIGHT, OBJECT_ROOT_ON_PLATFORM_Z
 from hbc_lab.assets.robots.unitree import (
     G1_29DOF_BODY_JOINT_NAMES,
     G1_DEX3_LEFT_HAND_JOINT_NAMES,
@@ -67,12 +67,18 @@ def reset_robot_body_and_hand_joints(
     asset.set_joint_position_target(hand_default_pos, joint_ids=hand_joint_ids, env_ids=env_ids)
 
 
-def _platform_pose_under_object(object_pos_w: torch.Tensor) -> torch.Tensor:
-    platform_pos_w = object_pos_w.clone()
-    platform_pos_w[:, 2] = object_pos_w[:, 2] - SMALL_CUBE_HALF_HEIGHT - 0.5 * OBJECT_PLATFORM_HEIGHT
-    platform_quat_w = torch.zeros(object_pos_w.shape[0], 4, device=object_pos_w.device)
+def _platform_pose_under_object_root(object_root_pos_w: torch.Tensor) -> torch.Tensor:
+    platform_pos_w = object_root_pos_w.clone()
+    platform_pos_w[:, 2] = object_root_pos_w[:, 2] - 0.5 * OBJECT_PLATFORM_HEIGHT
+    platform_quat_w = torch.zeros(object_root_pos_w.shape[0], 4, device=object_root_pos_w.device)
     platform_quat_w[:, 0] = 1.0
     return torch.cat((platform_pos_w, platform_quat_w), dim=-1)
+
+
+def _object_frame_pos_from_root(object_root_pos_w: torch.Tensor) -> torch.Tensor:
+    object_frame_pos_w = object_root_pos_w.clone()
+    object_frame_pos_w[:, 2] += APPLE_OBJECT_FRAME_OFFSET_Z
+    return object_frame_pos_w
 
 
 def reset_object_and_support_platforms(
@@ -91,7 +97,7 @@ def reset_object_and_support_platforms(
     range_list = [pose_range.get(key, (0.0, 0.0)) for key in ["x", "y", "z", "roll", "pitch", "yaw"]]
     ranges = torch.tensor(range_list, device=obj.device)
     rand_samples = math_utils.sample_uniform(ranges[:, 0], ranges[:, 1], (len(env_ids), 6), device=obj.device)
-    object_pos_w = root_states[:, 0:3] + env.scene.env_origins[env_ids] + rand_samples[:, 0:3]
+    object_root_pos_w = root_states[:, 0:3] + env.scene.env_origins[env_ids] + rand_samples[:, 0:3]
     object_quat_delta = math_utils.quat_from_euler_xyz(rand_samples[:, 3], rand_samples[:, 4], rand_samples[:, 5])
     object_quat_w = math_utils.quat_mul(root_states[:, 3:7], object_quat_delta)
 
@@ -101,26 +107,26 @@ def reset_object_and_support_platforms(
     object_velocity = root_states[:, 7:13] + rand_samples
 
     radius_range = object_goal_radius_range or env.cfg.object_goal_radius_range
-    target_offset = torch.zeros_like(object_pos_w)
-    radius = torch.empty(object_pos_w.shape[0], 1, device=obj.device).uniform_(*radius_range)
-    heading = torch.empty(object_pos_w.shape[0], 1, device=obj.device).uniform_(-3.14159, 3.14159)
+    target_offset = torch.zeros_like(object_root_pos_w)
+    radius = torch.empty(object_root_pos_w.shape[0], 1, device=obj.device).uniform_(*radius_range)
+    heading = torch.empty(object_root_pos_w.shape[0], 1, device=obj.device).uniform_(-3.14159, 3.14159)
     target_offset[:, 0:1] = radius * torch.cos(heading)
     target_offset[:, 1:2] = radius * torch.sin(heading)
-    target_pos_w = object_pos_w + target_offset
+    target_root_pos_w = object_root_pos_w + target_offset
 
     zero_platform_velocity = torch.zeros(env_ids.shape[0], 6, device=obj.device)
     env.scene[init_platform_cfg.name].write_root_state_to_sim(
-        torch.cat((_platform_pose_under_object(object_pos_w), zero_platform_velocity), dim=-1),
+        torch.cat((_platform_pose_under_object_root(object_root_pos_w), zero_platform_velocity), dim=-1),
         env_ids=env_ids,
     )
     env.scene[target_platform_cfg.name].write_root_state_to_sim(
-        torch.cat((_platform_pose_under_object(target_pos_w), zero_platform_velocity), dim=-1),
+        torch.cat((_platform_pose_under_object_root(target_root_pos_w), zero_platform_velocity), dim=-1),
         env_ids=env_ids,
     )
 
-    obj.write_root_state_to_sim(torch.cat((object_pos_w, object_quat_w, object_velocity), dim=-1), env_ids=env_ids)
-    env.object_initial_pos_w[env_ids] = object_pos_w
-    env.object_target_pos_w[env_ids] = target_pos_w
+    obj.write_root_state_to_sim(torch.cat((object_root_pos_w, object_quat_w, object_velocity), dim=-1), env_ids=env_ids)
+    env.object_initial_pos_w[env_ids] = _object_frame_pos_from_root(object_root_pos_w)
+    env.object_target_pos_w[env_ids] = _object_frame_pos_from_root(target_root_pos_w)
 
 
 @configclass
@@ -129,11 +135,33 @@ class G1Dex3HierDrcEventCfg:
         func=mdp.randomize_rigid_body_material,
         mode="startup",
         params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=".*"),
+            "asset_cfg": SceneEntityCfg("robot", body_names="^(?!.*hand.*).*"),
             "static_friction_range": (0.4, 1.5),
             "dynamic_friction_range": (0.4, 1.2),
             "restitution_range": (0.0, 0.0),
             "num_buckets": 64,
+        },
+    )
+    hand_physics_material = EventTerm(
+        func=mdp.randomize_rigid_body_material,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*hand.*"),
+            "static_friction_range": (1.2, 2.0),
+            "dynamic_friction_range": (1.0, 1.5),
+            "restitution_range": (0.0, 0.0),
+            "num_buckets": 32,
+        },
+    )
+    object_physics_material = EventTerm(
+        func=mdp.randomize_rigid_body_material,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("object"),
+            "static_friction_range": (1.5, 1.5),
+            "dynamic_friction_range": (1.2, 1.2),
+            "restitution_range": (0.0, 0.0),
+            "num_buckets": 1,
         },
     )
     add_base_mass = EventTerm(
@@ -172,7 +200,7 @@ class G1Dex3HierDrcEventCfg:
             "pose_range": {
                 "x": (1.5, 2.0),
                 "y": (-0.35, 0.35),
-                "z": (OBJECT_ON_PLATFORM_Z, OBJECT_ON_PLATFORM_Z),
+                "z": (OBJECT_ROOT_ON_PLATFORM_Z, OBJECT_ROOT_ON_PLATFORM_Z),
                 "yaw": (-3.14, 3.14),
             },
             "velocity_range": {},
