@@ -108,14 +108,14 @@ def test_trial3_couple_reward_uses_contact_gate_to_allow_close_after_touch():
     assert "support_contact = torch.maximum(env.active_index_contact, env.active_middle_contact)" in reward_source
     assert "thumb_palm_gate = torch.minimum(env.active_thumb_contact, env.active_palm_contact)" in reward_source
     assert "thumb_support_gate = torch.minimum(env.active_thumb_contact, support_contact)" in reward_source
-    assert "contact_gate = torch.clamp(torch.maximum(thumb_palm_gate, thumb_support_gate) / 0.12" in reward_source
-    assert "close_gate = torch.maximum(grasp_window, contact_gate)" in reward_source
+    assert "contact_gate = torch.clamp(torch.maximum(thumb_palm_gate, thumb_support_gate) / 0.06" in reward_source
+    assert "close_gate = torch.clamp(grasp_window + contact_gate, min=0.0, max=1.0)" in reward_source
     assert "gated_gripper_close = gripper_close * close_gate" in reward_source
     assert "early_close_penalty = gripper_close * (1.0 - close_gate)" in reward_source
-    assert "air_close_penalty = gripper_close * (1.0 - contact_gate) * grasp_window" in reward_source
-    assert "0.18 * gated_gripper_close" in reward_source
-    assert "- 0.05 * early_close_penalty" in reward_source
-    assert "- 0.18 * air_close_penalty" in reward_source
+    assert "air_close_penalty = gripper_close * (1.0 - contact_gate) * (1.0 - grasp_window)" in reward_source
+    assert "0.40 * gated_gripper_close" in reward_source
+    assert "- 0.02 * early_close_penalty" in reward_source
+    assert "- 0.02 * air_close_penalty" in reward_source
 
 
 def test_dex3_contact_group_force_preserves_filtered_force_direction_for_pinch():

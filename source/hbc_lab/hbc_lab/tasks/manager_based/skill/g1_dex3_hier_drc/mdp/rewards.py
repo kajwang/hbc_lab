@@ -32,11 +32,11 @@ def _trial3_couple_terms(env) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor,
     support_contact = torch.maximum(env.active_index_contact, env.active_middle_contact)
     thumb_palm_gate = torch.minimum(env.active_thumb_contact, env.active_palm_contact)
     thumb_support_gate = torch.minimum(env.active_thumb_contact, support_contact)
-    contact_gate = torch.clamp(torch.maximum(thumb_palm_gate, thumb_support_gate) / 0.12, min=0.0, max=1.0)
-    close_gate = torch.maximum(grasp_window, contact_gate)
+    contact_gate = torch.clamp(torch.maximum(thumb_palm_gate, thumb_support_gate) / 0.06, min=0.0, max=1.0)
+    close_gate = torch.clamp(grasp_window + contact_gate, min=0.0, max=1.0)
     gated_gripper_close = gripper_close * close_gate
     early_close_penalty = gripper_close * (1.0 - close_gate)
-    air_close_penalty = gripper_close * (1.0 - contact_gate) * grasp_window
+    air_close_penalty = gripper_close * (1.0 - contact_gate) * (1.0 - grasp_window)
     return grasp_window, contact_gate, gated_gripper_close, early_close_penalty, air_close_penalty
 
 
@@ -48,9 +48,9 @@ def couple_reward(env) -> torch.Tensor:
         + 0.30 * env.c_contact
         + 0.25 * env.c_finger_count
         + 0.20 * env.c_pinch
-        + 0.18 * gated_gripper_close
-        - 0.05 * early_close_penalty
-        - 0.18 * air_close_penalty
+        + 0.40 * gated_gripper_close
+        - 0.02 * early_close_penalty
+        - 0.02 * air_close_penalty
     )
 
 def manip_reward(env) -> torch.Tensor:
