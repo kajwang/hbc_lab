@@ -104,18 +104,18 @@ def test_trial3_couple_reward_uses_contact_gate_to_allow_close_after_touch():
     reward_source = _read(MDP_ROOT / "rewards.py")
 
     assert "def _trial3_couple_terms" in reward_source
-    assert "grasp_window = 1.0 - torch.tanh(d / 0.22)" in reward_source
-    assert "support_contact = torch.maximum(env.active_index_contact, env.active_middle_contact)" in reward_source
-    assert "thumb_palm_gate = torch.minimum(env.active_thumb_contact, env.active_palm_contact)" in reward_source
-    assert "thumb_support_gate = torch.minimum(env.active_thumb_contact, support_contact)" in reward_source
-    assert "contact_gate = torch.clamp(torch.maximum(thumb_palm_gate, thumb_support_gate) / 0.06" in reward_source
-    assert "close_gate = torch.clamp(grasp_window + contact_gate, min=0.0, max=1.0)" in reward_source
-    assert "gated_gripper_close = gripper_close * close_gate" in reward_source
-    assert "early_close_penalty = gripper_close * (1.0 - close_gate)" in reward_source
-    assert "air_close_penalty = gripper_close * (1.0 - contact_gate) * (1.0 - grasp_window)" in reward_source
-    assert "0.40 * gated_gripper_close" in reward_source
-    assert "- 0.02 * early_close_penalty" in reward_source
-    assert "- 0.02 * air_close_penalty" in reward_source
+    assert "grasp_window = 1.0 - torch.tanh(d / 0.15)" in reward_source
+    assert "finger_support_contact = torch.maximum(env.active_index_contact, env.active_middle_contact)" in reward_source
+    assert "thumb_palm_contact = torch.minimum(env.active_thumb_contact, env.active_palm_contact)" in reward_source
+    assert "thumb_finger_contact = torch.minimum(env.active_thumb_contact, finger_support_contact)" in reward_source
+    assert "two_side_contact = torch.maximum(thumb_palm_contact, thumb_finger_contact)" in reward_source
+    assert "gated_gripper_close = gripper_close * two_side_contact" in reward_source
+    assert "air_close_penalty = gripper_close * (1.0 - two_side_contact)" in reward_source
+    assert "contact_gate" not in reward_source
+    assert "/ 0.06" not in reward_source
+    assert "0.55 * gated_gripper_close" in reward_source
+    assert "- 0.10 * air_close_penalty" in reward_source
+    assert "early_close_penalty" not in reward_source
 
 
 def test_dex3_contact_group_force_preserves_filtered_force_direction_for_pinch():
@@ -340,18 +340,24 @@ def test_hier_play_does_not_hard_code_closed_grippers_by_default():
     assert "self._apply_debug_gripper_override()" in env_source
 
 
-def test_hier_couple_reward_penalizes_early_active_grip_like_go2arx5():
+def test_hier_couple_reward_uses_contact_gated_grip_and_air_close_penalty():
     reward_source = _read(MDP_ROOT / "rewards.py")
 
-    assert "early_close_penalty = gripper_close * (1.0 - close_gate)" in reward_source
-    assert "gated_gripper_close = gripper_close * close_gate" in reward_source
+    assert "grasp_window = 1.0 - torch.tanh(d / 0.15)" in reward_source
+    assert "gated_gripper_close = gripper_close * two_side_contact" in reward_source
+    assert "air_close_penalty = gripper_close * (1.0 - two_side_contact)" in reward_source
+    assert "early_close_penalty" not in reward_source
 
 
-def test_hier_couple_reward_uses_two_sided_contact_instead_of_strict_pinch_gate():
+def test_hier_couple_reward_is_simple_two_sided_contact_reward():
     reward_source = _read(MDP_ROOT / "rewards.py")
     progress_source = _read(MDP_ROOT / "contact_progress.py")
 
-    assert "+ 0.20 * contact_gate" in reward_source
+    assert "+ 0.35 * two_side_contact" in reward_source
+    assert "+ 0.55 * gated_gripper_close" in reward_source
+    assert "- 0.10 * air_close_penalty" in reward_source
+    assert "+ 0.30 * env.c_contact" not in reward_source
+    assert "+ 0.25 * env.c_finger_count" not in reward_source
     assert "+ 0.20 * env.c_pinch" not in reward_source
     assert "finger_count = torch.clamp((thumb_contact + index_contact + middle_contact) / 3.0" in progress_source
     assert "pinch_score = torch.clamp((-cos_sim - soft_pinch_start) / (1.0 - soft_pinch_start)" in progress_source

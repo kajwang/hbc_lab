@@ -78,6 +78,10 @@ def _reward_env(distance: float, active_grip: float):
     return types.SimpleNamespace(
         d_active_hand=torch.tensor([distance]),
         active_grip=torch.tensor([active_grip]),
+        active_palm_contact=torch.zeros(1),
+        active_thumb_contact=torch.zeros(1),
+        active_index_contact=torch.zeros(1),
+        active_middle_contact=torch.zeros(1),
         c_contact=torch.zeros(1),
         c_finger_count=torch.zeros(1),
         c_opposition=torch.zeros(1),
@@ -273,8 +277,10 @@ def test_couple_reward_uses_contact_gate_to_allow_closing_after_touch(monkeypatc
     rewards = _load_rewards_module(monkeypatch)
     open_env = _reward_env(distance=0.32, active_grip=0.0)
     closed_env = _reward_env(distance=0.32, active_grip=1.0)
-    open_env.c_contact[:] = 0.20
-    closed_env.c_contact[:] = 0.20
+    open_env.active_thumb_contact[:] = 1.0
+    open_env.active_palm_contact[:] = 1.0
+    closed_env.active_thumb_contact[:] = 1.0
+    closed_env.active_palm_contact[:] = 1.0
 
     open_reward = rewards.couple_reward(open_env)
     closed_reward = rewards.couple_reward(closed_env)
@@ -285,13 +291,12 @@ def test_couple_reward_uses_contact_gate_to_allow_closing_after_touch(monkeypatc
 def test_couple_reward_matches_trial3_contact_gated_weights(monkeypatch):
     rewards = _load_rewards_module(monkeypatch)
     env = _reward_env(distance=0.0, active_grip=1.0)
-    env.c_contact[:] = 1.0
-    env.c_finger_count[:] = 1.0
-    env.c_pinch[:] = 0.5
+    env.active_thumb_contact[:] = 1.0
+    env.active_palm_contact[:] = 1.0
 
     reward = rewards.couple_reward(env)
 
-    assert torch.allclose(reward, torch.tensor([1.28]), atol=1.0e-6)
+    assert torch.allclose(reward, torch.tensor([1.35]), atol=1.0e-6)
 
     far_closed = rewards.couple_reward(_reward_env(distance=1.0, active_grip=1.0))
     far_open = rewards.couple_reward(_reward_env(distance=1.0, active_grip=0.0))
