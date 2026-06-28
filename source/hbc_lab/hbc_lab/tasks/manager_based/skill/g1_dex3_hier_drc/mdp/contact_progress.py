@@ -167,7 +167,9 @@ def compute_active_hand_grasp_progress(
     opposition = select_active_hand_value(left_components.opposition, right_components.opposition, active_hand)
     finger_count = select_active_hand_value(left_components.finger_count, right_components.finger_count, active_hand)
     close_allowed_gate = torch.clamp((close_distance - distance) / close_gate_width, min=0.0, max=1.0)
-    grasp = opposition * grip * close_allowed_gate
+    support_side_contact = torch.maximum(palm, finger)
+    two_side_contact = torch.minimum(thumb, support_side_contact)
+    grasp = two_side_contact * grip * close_allowed_gate
     return ActiveHandGraspProgress(
         active_hand=active_hand,
         contact=contact,

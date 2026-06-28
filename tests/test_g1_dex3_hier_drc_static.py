@@ -343,22 +343,23 @@ def test_hier_play_does_not_hard_code_closed_grippers_by_default():
 def test_hier_couple_reward_penalizes_early_active_grip_like_go2arx5():
     reward_source = _read(MDP_ROOT / "rewards.py")
 
-    assert "early_close_penalty = active_grip * (1.0 - grasp_window)" in reward_source
-    assert "gated_gripper_close = active_grip * grasp_window" in reward_source
+    assert "early_close_penalty = gripper_close * (1.0 - close_gate)" in reward_source
+    assert "gated_gripper_close = gripper_close * close_gate" in reward_source
 
 
-def test_hier_couple_reward_matches_go2arx5_weighting_with_grail_style_contact_terms():
+def test_hier_couple_reward_uses_two_sided_contact_instead_of_strict_pinch_gate():
     reward_source = _read(MDP_ROOT / "rewards.py")
     progress_source = _read(MDP_ROOT / "contact_progress.py")
 
-    assert "0.35 * grasp_window" in reward_source
-    assert "+ 0.35 * env.c_finger_count" in reward_source
-    assert "+ 0.20 * env.c_pinch" in reward_source
-    assert "+ 0.10 * gated_gripper_close" in reward_source
-    assert "- 0.20 * early_close_penalty" in reward_source
+    assert "+ 0.20 * contact_gate" in reward_source
+    assert "+ 0.20 * env.c_pinch" not in reward_source
     assert "finger_count = torch.clamp((thumb_contact + index_contact + middle_contact) / 3.0" in progress_source
     assert "pinch_score = torch.clamp((-cos_sim - soft_pinch_start) / (1.0 - soft_pinch_start)" in progress_source
     assert "opposition=pinch" in progress_source
+    assert "support_side_contact = torch.maximum(palm, finger)" in progress_source
+    assert "two_side_contact = torch.minimum(thumb, support_side_contact)" in progress_source
+    assert "grasp = two_side_contact * grip * close_allowed_gate" in progress_source
+    assert "grasp = opposition * grip * close_allowed_gate" not in progress_source
 
 
 def test_hier_wrist_commands_use_both_hand_tracking_error_penalty_without_xyz_hard_clamp():

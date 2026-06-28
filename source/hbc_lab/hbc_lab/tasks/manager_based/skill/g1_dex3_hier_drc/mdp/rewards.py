@@ -11,20 +11,6 @@ from hbc_lab.tasks.locomotion import mdp
 def approach_reward(env) -> torch.Tensor:
     return torch.exp(-env.d_active_hand / 0.5)
 
-
-# def couple_reward(env) -> torch.Tensor:
-#     grasp_window = 1.0 - torch.tanh(env.d_active_hand / 0.15)
-#     active_grip = env.active_grip
-#     gated_gripper_close = active_grip * grasp_window
-#     early_close_penalty = active_grip * (1.0 - grasp_window)
-#     return (
-#         0.35 * grasp_window
-#         + 0.35 * env.c_finger_count
-#         + 0.20 * env.c_pinch
-#         + 0.10 * gated_gripper_close
-#         - 0.20 * early_close_penalty
-#     )
-
 def _trial3_couple_terms(env) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     d = env.d_active_hand
     gripper_close = env.active_grip
@@ -42,12 +28,12 @@ def _trial3_couple_terms(env) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor,
 
 # Trial 3: keep go2arx5-style grasp-window coupling, but let real object contact open the close gate.
 def couple_reward(env) -> torch.Tensor:
-    grasp_window, _contact_gate, gated_gripper_close, early_close_penalty, air_close_penalty = _trial3_couple_terms(env)
+    grasp_window, contact_gate, gated_gripper_close, early_close_penalty, air_close_penalty = _trial3_couple_terms(env)
     return (
         0.45 * grasp_window
         + 0.30 * env.c_contact
         + 0.25 * env.c_finger_count
-        + 0.20 * env.c_pinch
+        + 0.20 * contact_gate
         + 0.40 * gated_gripper_close
         - 0.02 * early_close_penalty
         - 0.02 * air_close_penalty

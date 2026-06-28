@@ -136,7 +136,7 @@ def test_hand_contact_confidence_uses_whole_hand_object_force():
     assert components.contact[1] == 0.0
 
 
-def test_dex3_grasp_requires_thumb_and_index_or_middle_opposition():
+def test_dex3_grasp_accepts_thumb_against_palm_or_fingers_without_requiring_pinch():
     strong_force = torch.tensor([[3.0, 0.0, 0.0]])
     opposing_force = torch.tensor([[-3.0, 0.0, 0.0]])
     no_force = torch.zeros(1, 3)
@@ -144,6 +144,13 @@ def test_dex3_grasp_requires_thumb_and_index_or_middle_opposition():
     palm_only = compute_dex3_hand_contact_components(
         palm_force_w=strong_force,
         thumb_force_w=no_force,
+        index_force_w=no_force,
+        middle_force_w=no_force,
+        force_threshold=1.0,
+    )
+    thumb_palm = compute_dex3_hand_contact_components(
+        palm_force_w=strong_force,
+        thumb_force_w=strong_force,
         index_force_w=no_force,
         middle_force_w=no_force,
         force_threshold=1.0,
@@ -165,6 +172,15 @@ def test_dex3_grasp_requires_thumb_and_index_or_middle_opposition():
         left_distance=torch.tensor([0.05]),
         right_distance=torch.tensor([0.05]),
     )
+    thumb_palm_progress = compute_active_hand_grasp_progress(
+        left_components=thumb_palm,
+        right_components=palm_only,
+        active_hand=torch.tensor([LEFT_HAND]),
+        left_grip=torch.tensor([[1.0]]),
+        right_grip=torch.tensor([[1.0]]),
+        left_distance=torch.tensor([0.05]),
+        right_distance=torch.tensor([0.05]),
+    )
     pinch_progress = compute_active_hand_grasp_progress(
         left_components=opposing_fingers,
         right_components=palm_only,
@@ -178,6 +194,8 @@ def test_dex3_grasp_requires_thumb_and_index_or_middle_opposition():
     assert palm_progress.contact.item() > 0.9
     assert palm_progress.opposition.item() == 0.0
     assert palm_progress.grasp.item() == 0.0
+    assert thumb_palm_progress.opposition.item() == 0.0
+    assert thumb_palm_progress.grasp.item() > 0.9
     assert pinch_progress.finger_count.item() > 0.9
     assert pinch_progress.opposition.item() > 0.9
     assert pinch_progress.grasp.item() > 0.9
