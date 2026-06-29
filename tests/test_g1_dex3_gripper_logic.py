@@ -25,7 +25,9 @@ from hbc_lab.tasks.manager_based.skill.g1_dex3_hier_drc.mdp.contact_progress imp
 )
 from hbc_lab.tasks.manager_based.skill.g1_dex3_hier_drc.mdp.gripper import (  # noqa: E402
     LEFT_DEX3_CLOSE_POSE,
+    LEFT_DEX3_GRIP_SYNERGY,
     RIGHT_DEX3_CLOSE_POSE,
+    RIGHT_DEX3_GRIP_SYNERGY,
     interpolate_dex3_hand_pose,
 )
 from hbc_lab.tasks.manager_based.skill.g1_dex3_hier_drc.mdp.high_level_actions import (  # noqa: E402
@@ -109,10 +111,12 @@ def test_interpolate_dex3_hand_pose_maps_zero_to_open_and_one_to_closed():
 
     assert left_pose.shape == (3, 7)
     assert right_pose.shape == (3, 7)
-    assert torch.allclose(left_pose[0], torch.zeros(7))
-    assert torch.allclose(left_pose[1], 0.5 * LEFT_DEX3_CLOSE_POSE)
+    assert torch.allclose(left_pose[0], 0.15 * LEFT_DEX3_GRIP_SYNERGY)
+    assert torch.allclose(left_pose[1], 0.425 * LEFT_DEX3_GRIP_SYNERGY)
+    assert torch.allclose(left_pose[2], 0.70 * LEFT_DEX3_GRIP_SYNERGY)
     assert torch.allclose(left_pose[2], LEFT_DEX3_CLOSE_POSE)
     assert torch.allclose(right_pose[2], RIGHT_DEX3_CLOSE_POSE)
+    assert torch.allclose(right_pose[0], 0.15 * RIGHT_DEX3_GRIP_SYNERGY)
 
 
 def test_active_hand_selection_uses_only_the_sampled_hand_values():
@@ -281,6 +285,21 @@ def test_couple_reward_uses_contact_gate_to_allow_closing_after_touch(monkeypatc
     open_env.active_palm_contact[:] = 1.0
     closed_env.active_thumb_contact[:] = 1.0
     closed_env.active_palm_contact[:] = 1.0
+
+    open_reward = rewards.couple_reward(open_env)
+    closed_reward = rewards.couple_reward(closed_env)
+
+    assert closed_reward.item() > open_reward.item()
+
+
+def test_couple_reward_scales_small_two_side_contact_before_rewarding_closure(monkeypatch):
+    rewards = _load_rewards_module(monkeypatch)
+    open_env = _reward_env(distance=0.32, active_grip=0.0)
+    closed_env = _reward_env(distance=0.32, active_grip=1.0)
+    open_env.active_thumb_contact[:] = 0.002
+    open_env.active_palm_contact[:] = 0.002
+    closed_env.active_thumb_contact[:] = 0.002
+    closed_env.active_palm_contact[:] = 0.002
 
     open_reward = rewards.couple_reward(open_env)
     closed_reward = rewards.couple_reward(closed_env)

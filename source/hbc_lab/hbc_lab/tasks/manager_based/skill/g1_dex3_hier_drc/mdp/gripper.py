@@ -27,12 +27,16 @@ RIGHT_DEX3_JOINT_NAMES = (
     "right_hand_index_1_joint",
 )
 
-LEFT_DEX3_OPEN_POSE = torch.zeros(7, dtype=torch.float32)
-RIGHT_DEX3_OPEN_POSE = torch.zeros(7, dtype=torch.float32)
+DEX3_OPEN_SCALE = 0.15
+DEX3_CLOSE_SCALE = 0.70
 
-# OASIS-style hand synergy. grip = 1.0 means fully closed.
-LEFT_DEX3_CLOSE_POSE = torch.tensor([0.0, 1.0, 1.74, -1.57, -1.74, -1.57, -1.74], dtype=torch.float32)
-RIGHT_DEX3_CLOSE_POSE = torch.tensor([0.0, -1.0, -1.74, 1.57, 1.74, 1.57, 1.74], dtype=torch.float32)
+# OASIS-style 7-DoF joint-space grip synergy. Open/close poses scale this vector.
+LEFT_DEX3_GRIP_SYNERGY = torch.tensor([0.0, 1.0, 1.74, -1.57, -1.74, -1.57, -1.74], dtype=torch.float32)
+RIGHT_DEX3_GRIP_SYNERGY = torch.tensor([0.0, -1.0, -1.74, 1.57, 1.74, 1.57, -1.74], dtype=torch.float32)
+LEFT_DEX3_OPEN_POSE = LEFT_DEX3_GRIP_SYNERGY * DEX3_OPEN_SCALE
+RIGHT_DEX3_OPEN_POSE = RIGHT_DEX3_GRIP_SYNERGY * DEX3_OPEN_SCALE
+LEFT_DEX3_CLOSE_POSE = LEFT_DEX3_GRIP_SYNERGY * DEX3_CLOSE_SCALE
+RIGHT_DEX3_CLOSE_POSE = RIGHT_DEX3_GRIP_SYNERGY * DEX3_CLOSE_SCALE
 
 
 def _grip_column(grip: torch.Tensor) -> torch.Tensor:

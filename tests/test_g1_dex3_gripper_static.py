@@ -55,3 +55,22 @@ def test_g1_dex3_high_level_gripper_and_contact_progress_modules_are_local():
     assert "thumb_index" not in progress_source
     assert "robot_lab" not in gripper_source
     assert "robot_lab" not in progress_source
+
+
+def test_g1_dex3_grip_synergy_is_named_as_joint_space_direction_not_full_close_pose():
+    gripper_source = _read(SKILL_ROOT / "mdp/gripper.py")
+
+    assert "LEFT_DEX3_GRIP_SYNERGY = torch.tensor([0.0, 1.0, 1.74, -1.57, -1.74, -1.57, -1.74]" in gripper_source
+    assert "RIGHT_DEX3_GRIP_SYNERGY = torch.tensor([0.0, -1.0, -1.74, 1.57, 1.74, 1.57, -1.74]" in gripper_source
+    assert "FULL_CLOSE_POSE" not in gripper_source
+
+
+def test_g1_dex3_grip_range_starts_precurled_and_stops_before_full_close():
+    gripper_source = _read(SKILL_ROOT / "mdp/gripper.py")
+
+    assert "DEX3_OPEN_SCALE = 0.15" in gripper_source
+    assert "DEX3_CLOSE_SCALE = 0.70" in gripper_source
+    assert "LEFT_DEX3_OPEN_POSE = LEFT_DEX3_GRIP_SYNERGY * DEX3_OPEN_SCALE" in gripper_source
+    assert "LEFT_DEX3_CLOSE_POSE = LEFT_DEX3_GRIP_SYNERGY * DEX3_CLOSE_SCALE" in gripper_source
+    assert "RIGHT_DEX3_OPEN_POSE = RIGHT_DEX3_GRIP_SYNERGY * DEX3_OPEN_SCALE" in gripper_source
+    assert "RIGHT_DEX3_CLOSE_POSE = RIGHT_DEX3_GRIP_SYNERGY * DEX3_CLOSE_SCALE" in gripper_source

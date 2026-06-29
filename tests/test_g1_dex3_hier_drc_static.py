@@ -104,17 +104,19 @@ def test_trial3_couple_reward_uses_contact_gate_to_allow_close_after_touch():
     reward_source = _read(MDP_ROOT / "rewards.py")
 
     assert "def _trial3_couple_terms" in reward_source
+    assert "TWO_SIDE_CONTACT_GATE_SCALE = 0.02" in reward_source
     assert "grasp_window = 1.0 - torch.tanh(d / 0.15)" in reward_source
     assert "finger_support_contact = torch.maximum(env.active_index_contact, env.active_middle_contact)" in reward_source
     assert "thumb_palm_contact = torch.minimum(env.active_thumb_contact, env.active_palm_contact)" in reward_source
     assert "thumb_finger_contact = torch.minimum(env.active_thumb_contact, finger_support_contact)" in reward_source
     assert "two_side_contact = torch.maximum(thumb_palm_contact, thumb_finger_contact)" in reward_source
-    assert "gated_gripper_close = gripper_close * two_side_contact" in reward_source
-    assert "air_close_penalty = gripper_close * (1.0 - two_side_contact)" in reward_source
+    assert "two_side_gate = torch.clamp(two_side_contact / TWO_SIDE_CONTACT_GATE_SCALE" in reward_source
+    assert "gated_gripper_close = gripper_close * two_side_gate" in reward_source
+    assert "air_close_penalty = gripper_close * (1.0 - two_side_gate)" in reward_source
     assert "contact_gate" not in reward_source
     assert "/ 0.06" not in reward_source
     assert "0.55 * gated_gripper_close" in reward_source
-    assert "- 0.10 * air_close_penalty" in reward_source
+    assert "- 0.05 * air_close_penalty" in reward_source
     assert "early_close_penalty" not in reward_source
 
 
@@ -344,18 +346,18 @@ def test_hier_couple_reward_uses_contact_gated_grip_and_air_close_penalty():
     reward_source = _read(MDP_ROOT / "rewards.py")
 
     assert "grasp_window = 1.0 - torch.tanh(d / 0.15)" in reward_source
-    assert "gated_gripper_close = gripper_close * two_side_contact" in reward_source
-    assert "air_close_penalty = gripper_close * (1.0 - two_side_contact)" in reward_source
+    assert "gated_gripper_close = gripper_close * two_side_gate" in reward_source
+    assert "air_close_penalty = gripper_close * (1.0 - two_side_gate)" in reward_source
     assert "early_close_penalty" not in reward_source
 
 
-def test_hier_couple_reward_is_simple_two_sided_contact_reward():
+def test_hier_couple_reward_uses_scaled_two_sided_contact_gate():
     reward_source = _read(MDP_ROOT / "rewards.py")
     progress_source = _read(MDP_ROOT / "contact_progress.py")
 
-    assert "+ 0.35 * two_side_contact" in reward_source
+    assert "+ 0.35 * two_side_gate" in reward_source
     assert "+ 0.55 * gated_gripper_close" in reward_source
-    assert "- 0.10 * air_close_penalty" in reward_source
+    assert "- 0.05 * air_close_penalty" in reward_source
     assert "+ 0.30 * env.c_contact" not in reward_source
     assert "+ 0.25 * env.c_finger_count" not in reward_source
     assert "+ 0.20 * env.c_pinch" not in reward_source
