@@ -13,14 +13,31 @@ def _read(path: Path) -> str:
     return path.read_text()
 
 
+def test_vendored_unitree_assets_are_included_as_package_data():
+    pyproject_source = _read(REPO_ROOT / "pyproject.toml")
+
+    assert "[tool.setuptools.package-data]" in pyproject_source
+    assert "assets/models/unitree_sim_isaaclab/assets/robots/g1-29dof_wholebody_dex1/*.usd" in pyproject_source
+    assert "assets/models/unitree_sim_isaaclab/assets/robots/g1-29dof_wholebody_dex1/configuration/*.usd" in pyproject_source
+
+
 def test_g1_dex1_asset_cfg_uses_official_unitree_gripper_asset_and_body_joint_order():
     unitree_source = _read(ASSET_ROOT / "unitree.py")
+    vendored_asset = (
+        HBC_ROOT
+        / "assets/models/unitree_sim_isaaclab/assets/robots/g1-29dof_wholebody_dex1"
+        / "g1_29dof_with_dex1_rev_1_0.usd"
+    )
 
     assert "UNITREE_SIM_ISAACLAB_ASSETS_DIR" in unitree_source
+    assert "Path(__file__).resolve()" in unitree_source
+    assert "models/unitree_sim_isaaclab/assets" in unitree_source
+    assert "/home/kaijun/wbc/unitree_sim_isaaclab/assets" not in unitree_source
     assert "G1_DEX1_LEFT_GRIPPER_JOINT_NAMES" in unitree_source
     assert "G1_DEX1_RIGHT_GRIPPER_JOINT_NAMES" in unitree_source
     assert "UNITREE_G1_29DOF_DEX1_CFG" in unitree_source
     assert "robots/g1-29dof_wholebody_dex1/g1_29dof_with_dex1_rev_1_0.usd" in unitree_source
+    assert vendored_asset.exists()
     assert '"left_hand_Joint1_1"' in unitree_source
     assert '"left_hand_Joint2_1"' in unitree_source
     assert '"right_hand_Joint1_1"' in unitree_source
