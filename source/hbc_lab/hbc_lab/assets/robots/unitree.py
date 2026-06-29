@@ -19,6 +19,10 @@ from hbc_lab.assets.robots import unitree_actuators
 
 UNITREE_MODEL_DIR = os.environ.get("UNITREE_MODEL_DIR", "/home/kaijun/wbc/unitree_model")
 UNITREE_ROS_DIR = os.environ.get("UNITREE_ROS_DIR", "/home/kaijun/wbc/unitree_ros")
+UNITREE_SIM_ISAACLAB_ASSETS_DIR = os.environ.get(
+    "UNITREE_SIM_ISAACLAB_ASSETS_DIR",
+    "/home/kaijun/wbc/unitree_sim_isaaclab/assets",
+)
 
 
 @configclass
@@ -799,6 +803,61 @@ UNITREE_G1_29DOF_DEX3_CFG = UNITREE_G1_29DOF_CFG.replace(
         *G1_29DOF_BODY_JOINT_NAMES,
         *G1_DEX3_LEFT_HAND_JOINT_NAMES,
         *G1_DEX3_RIGHT_HAND_JOINT_NAMES,
+    ],
+)
+
+G1_DEX1_LEFT_GRIPPER_JOINT_NAMES = [
+    "left_hand_Joint1_1",
+    "left_hand_Joint2_1",
+]
+
+G1_DEX1_RIGHT_GRIPPER_JOINT_NAMES = [
+    "right_hand_Joint1_1",
+    "right_hand_Joint2_1",
+]
+
+UNITREE_G1_29DOF_DEX1_CFG = UNITREE_G1_29DOF_CFG.replace(
+    spawn=UnitreeUsdFileCfg(
+        usd_path=(
+            f"{UNITREE_SIM_ISAACLAB_ASSETS_DIR}"
+            "/robots/g1-29dof_wholebody_dex1/g1_29dof_with_dex1_rev_1_0.usd"
+        ),
+    ),
+    init_state=ArticulationCfg.InitialStateCfg(
+        pos=(0.0, 0.0, 0.8),
+        joint_pos={
+            "left_hip_pitch_joint": -0.1,
+            "right_hip_pitch_joint": -0.1,
+            ".*_knee_joint": 0.3,
+            ".*_ankle_pitch_joint": -0.2,
+            ".*_shoulder_pitch_joint": 0.3,
+            "left_shoulder_roll_joint": 0.25,
+            "right_shoulder_roll_joint": -0.25,
+            ".*_elbow_joint": 0.97,
+            "left_wrist_roll_joint": 0.15,
+            "right_wrist_roll_joint": -0.15,
+            ".*_hand_Joint[12]_1": 0.047,
+        },
+        joint_vel={".*": 0.0},
+    ),
+    actuators={
+        **UNITREE_G1_29DOF_CFG.actuators,
+        "gripper": ImplicitActuatorCfg(
+            joint_names_expr=[
+                *G1_DEX1_LEFT_GRIPPER_JOINT_NAMES,
+                *G1_DEX1_RIGHT_GRIPPER_JOINT_NAMES,
+            ],
+            effort_limit_sim=20.0,
+            velocity_limit_sim=10.0,
+            stiffness=100.0,
+            damping=1.0,
+            armature=0.0005,
+        ),
+    },
+    joint_sdk_names=[
+        *G1_29DOF_BODY_JOINT_NAMES,
+        *G1_DEX1_LEFT_GRIPPER_JOINT_NAMES,
+        *G1_DEX1_RIGHT_GRIPPER_JOINT_NAMES,
     ],
 )
 

@@ -8,55 +8,37 @@ from isaaclab.utils import configclass
 from hbc_lab.tasks.locomotion import mdp
 
 
-SINGLE_SIDE_CONTACT_GATE_SCALE = 0.02
-
-
 def approach_reward(env) -> torch.Tensor:
     return torch.exp(-env.d_active_hand / 0.5)
 
-def _trial3_couple_terms(env) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    d = env.d_active_hand
-    gripper_close = env.active_grip
-    grasp_window = 1.0 - torch.tanh(d / 0.25)
-    single_side_contact = torch.maximum(
-        torch.maximum(env.active_palm_contact, env.active_thumb_contact),
-        torch.maximum(env.active_index_contact, env.active_middle_contact),
-    )
-    single_side_gate = torch.clamp(single_side_contact / SINGLE_SIDE_CONTACT_GATE_SCALE, min=0.0, max=1.0)
-    gated_gripper_close = gripper_close * grasp_window
-    air_close_penalty = gripper_close * (1.0 - single_side_gate)
-    return grasp_window, single_side_contact, single_side_gate, gated_gripper_close, air_close_penalty
 
-
-# Trial 3 single-side ablation: allow contact-gated closing from any active hand contact.
 def couple_reward(env) -> torch.Tensor:
-    grasp_window, _single_side_contact, single_side_gate, gated_gripper_close, air_close_penalty = _trial3_couple_terms(env)
+    grasp_window = 1.0 - torch.tanh(env.d_active_hand / 0.15)
+    gripper_close = env.active_grip
+    gated_gripper_close = gripper_close * grasp_window
+    early_close_penalty = gripper_close * (1.0 - grasp_window)
     return (
-        0.45 * grasp_window
-        + 0.35 * single_side_gate
-        + 0.55 * gated_gripper_close
-        - 0.05 * air_close_penalty
+        0.35 * grasp_window
+        + 0.35 * env.c_contact
+        + 0.20 * env.c_pinch
+        + 0.10 * gated_gripper_close
+        - 0.20 * early_close_penalty
     )
+
 
 def manip_reward(env) -> torch.Tensor:
     initial = torch.norm(env.object_initial_pos_w - env.object_target_pos_w, dim=-1)
     progress = torch.clamp(initial - env.d_goal, min=0.0) / (initial + 1e-5)
-    return 0.7 * progress + 0.3 * env.c_couple + 1.0
+    return 0.7 * progress + 0.3 * env.c_couple
 
 
 def hier_drc_reward(env, approach_scale: float = 2.0, couple_scale: float = 5.0, manip_scale: float = 20.0) -> torch.Tensor:
     r_app = approach_reward(env)
     r_couple = couple_reward(env)
     r_manip = manip_reward(env)
-    grasp_window, single_side_contact, single_side_gate, gated_gripper_close, air_close_penalty = _trial3_couple_terms(env)
     env.extras["log"]["DRC/R_app_raw"] = r_app.mean()
     env.extras["log"]["DRC/R_couple_raw"] = r_couple.mean()
     env.extras["log"]["DRC/R_manip_raw"] = r_manip.mean()
-    env.extras["log"]["DRC/grasp_window_mean"] = grasp_window.mean()
-    env.extras["log"]["DRC/single_side_contact_mean"] = single_side_contact.mean()
-    env.extras["log"]["DRC/single_side_gate_mean"] = single_side_gate.mean()
-    env.extras["log"]["DRC/gated_gripper_close_mean"] = gated_gripper_close.mean()
-    env.extras["log"]["DRC/air_close_penalty_mean"] = air_close_penalty.mean()
     return env.W_app * approach_scale * r_app + env.W_couple * couple_scale * r_couple + env.W_manip * manip_scale * r_manip
 
 
@@ -92,7 +74,7 @@ def object_fall_penalty(env) -> torch.Tensor:
 
 
 @configclass
-class G1Dex3HierDrcRewardsCfg:
+class G1Dex1HierDrcRewardsCfg:
     drc_total = RewTerm(func=hier_drc_reward, weight=1.0)
     task_success = RewTerm(func=task_success_reward, weight=1.0)
     object_fall = RewTerm(func=object_fall_penalty, weight=-2.0)
@@ -108,6 +90,9 @@ class G1Dex3HierDrcRewardsCfg:
         weight=-1.0,
         params={
             "threshold": 1.0,
-            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=["(?!.*ankle.*|.*hand.*).*"]),
+            "sensor_cfg": SceneEntityCfg(
+                "contact_forces",
+                body_names=["(?!.*ankle.*|.*gripper.*|.*finger.*|.*hand.*).*"],
+            ),
         },
     )

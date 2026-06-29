@@ -8,13 +8,13 @@ from isaaclab.utils import configclass
 
 from hbc_lab.tasks.locomotion import mdp
 
-from ..mdp.actions import G1Dex3HierDrcActionsCfg
-from ..mdp.commands import G1Dex3HierDrcCommandsCfg
-from ..mdp.curriculums import G1Dex3HierDrcCurriculumCfg
-from ..mdp.events import G1Dex3HierDrcEventCfg
-from ..mdp.observations import G1Dex3HierDrcObservationsCfg
-from ..mdp.rewards import G1Dex3HierDrcRewardsCfg
-from ..mdp.scenes import G1Dex3HierDrcSceneCfg, LEFT_HAND_CONTACT_SENSOR_NAMES, RIGHT_HAND_CONTACT_SENSOR_NAMES
+from ..mdp.actions import G1Dex1HierDrcActionsCfg
+from ..mdp.commands import G1Dex1HierDrcCommandsCfg
+from ..mdp.curriculums import G1Dex1HierDrcCurriculumCfg
+from ..mdp.events import G1Dex1HierDrcEventCfg
+from ..mdp.observations import G1Dex1HierDrcObservationsCfg
+from ..mdp.rewards import G1Dex1HierDrcRewardsCfg
+from ..mdp.scenes import G1Dex1HierDrcSceneCfg, LEFT_GRIPPER_CONTACT_SENSOR_NAMES, RIGHT_GRIPPER_CONTACT_SENSOR_NAMES
 
 
 def joint_vel_explosion(
@@ -29,7 +29,7 @@ def joint_vel_explosion(
 
 
 @configclass
-class G1Dex3HierDrcTerminationsCfg:
+class G1Dex1HierDrcTerminationsCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
     base_height = DoneTerm(func=mdp.root_height_below_minimum, params={"minimum_height": 0.25})
     bad_orientation = DoneTerm(func=mdp.bad_orientation, params={"limit_angle": 1.2})
@@ -37,15 +37,15 @@ class G1Dex3HierDrcTerminationsCfg:
 
 
 @configclass
-class G1Dex3HierDrcEnvCfg(ManagerBasedRLEnvCfg):
-    scene: G1Dex3HierDrcSceneCfg = G1Dex3HierDrcSceneCfg(num_envs=4096, env_spacing=6.0)
-    actions: G1Dex3HierDrcActionsCfg = G1Dex3HierDrcActionsCfg()
-    commands: G1Dex3HierDrcCommandsCfg = G1Dex3HierDrcCommandsCfg()
-    observations: G1Dex3HierDrcObservationsCfg = G1Dex3HierDrcObservationsCfg()
-    rewards: G1Dex3HierDrcRewardsCfg = G1Dex3HierDrcRewardsCfg()
-    terminations: G1Dex3HierDrcTerminationsCfg = G1Dex3HierDrcTerminationsCfg()
-    events: G1Dex3HierDrcEventCfg = G1Dex3HierDrcEventCfg()
-    curriculum: G1Dex3HierDrcCurriculumCfg = G1Dex3HierDrcCurriculumCfg()
+class G1Dex1HierDrcEnvCfg(ManagerBasedRLEnvCfg):
+    scene: G1Dex1HierDrcSceneCfg = G1Dex1HierDrcSceneCfg(num_envs=4096, env_spacing=6.0)
+    actions: G1Dex1HierDrcActionsCfg = G1Dex1HierDrcActionsCfg()
+    commands: G1Dex1HierDrcCommandsCfg = G1Dex1HierDrcCommandsCfg()
+    observations: G1Dex1HierDrcObservationsCfg = G1Dex1HierDrcObservationsCfg()
+    rewards: G1Dex1HierDrcRewardsCfg = G1Dex1HierDrcRewardsCfg()
+    terminations: G1Dex1HierDrcTerminationsCfg = G1Dex1HierDrcTerminationsCfg()
+    events: G1Dex1HierDrcEventCfg = G1Dex1HierDrcEventCfg()
+    curriculum: G1Dex1HierDrcCurriculumCfg = G1Dex1HierDrcCurriculumCfg()
 
     low_level_policy_path: str = ""
     allow_missing_low_level_policy: bool = False
@@ -60,7 +60,7 @@ class G1Dex3HierDrcEnvCfg(ManagerBasedRLEnvCfg):
     low_level_action_scale: float = 0.25
     low_level_action_clip: float | None = None
     finite_obs_clip: float = 100.0
-    hand_contact_force_threshold: float = 0.1
+    hand_contact_force_threshold: float = 2.0
     close_distance: float = 0.20
     close_gate_width: float = 0.10
     success_distance: float = 0.08
@@ -76,7 +76,7 @@ class G1Dex3HierDrcEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.physics_material = self.scene.terrain.physics_material
         self.sim.physx.gpu_max_rigid_patch_count = 10 * 2**15
         self.scene.contact_forces.update_period = self.sim.dt
-        for sensor_name in LEFT_HAND_CONTACT_SENSOR_NAMES + RIGHT_HAND_CONTACT_SENSOR_NAMES:
+        for sensor_name in LEFT_GRIPPER_CONTACT_SENSOR_NAMES + RIGHT_GRIPPER_CONTACT_SENSOR_NAMES:
             getattr(self.scene, sensor_name).update_period = self.sim.dt
         self.scene.height_scanner.update_period = self.low_level_decimation * self.sim.dt
         if self.scene.terrain.terrain_generator is not None:

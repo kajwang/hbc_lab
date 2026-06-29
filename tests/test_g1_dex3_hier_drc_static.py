@@ -104,15 +104,12 @@ def test_trial3_couple_reward_uses_contact_gate_to_allow_close_after_touch():
     reward_source = _read(MDP_ROOT / "rewards.py")
 
     assert "def _trial3_couple_terms" in reward_source
-    assert "TWO_SIDE_CONTACT_GATE_SCALE = 0.02" in reward_source
-    assert "grasp_window = 1.0 - torch.tanh(d / 0.15)" in reward_source
-    assert "finger_support_contact = torch.maximum(env.active_index_contact, env.active_middle_contact)" in reward_source
-    assert "thumb_palm_contact = torch.minimum(env.active_thumb_contact, env.active_palm_contact)" in reward_source
-    assert "thumb_finger_contact = torch.minimum(env.active_thumb_contact, finger_support_contact)" in reward_source
-    assert "two_side_contact = torch.maximum(thumb_palm_contact, thumb_finger_contact)" in reward_source
-    assert "two_side_gate = torch.clamp(two_side_contact / TWO_SIDE_CONTACT_GATE_SCALE" in reward_source
-    assert "gated_gripper_close = gripper_close * two_side_gate" in reward_source
-    assert "air_close_penalty = gripper_close * (1.0 - two_side_gate)" in reward_source
+    assert "SINGLE_SIDE_CONTACT_GATE_SCALE = 0.02" in reward_source
+    assert "grasp_window = 1.0 - torch.tanh(d / 0.25)" in reward_source
+    assert "single_side_contact = torch.maximum(" in reward_source
+    assert "single_side_gate = torch.clamp(single_side_contact / SINGLE_SIDE_CONTACT_GATE_SCALE" in reward_source
+    assert "gated_gripper_close = gripper_close * single_side_gate" in reward_source
+    assert "air_close_penalty = gripper_close * (1.0 - single_side_gate)" in reward_source
     assert "contact_gate" not in reward_source
     assert "/ 0.06" not in reward_source
     assert "0.55 * gated_gripper_close" in reward_source
@@ -345,17 +342,17 @@ def test_hier_play_does_not_hard_code_closed_grippers_by_default():
 def test_hier_couple_reward_uses_contact_gated_grip_and_air_close_penalty():
     reward_source = _read(MDP_ROOT / "rewards.py")
 
-    assert "grasp_window = 1.0 - torch.tanh(d / 0.15)" in reward_source
-    assert "gated_gripper_close = gripper_close * two_side_gate" in reward_source
-    assert "air_close_penalty = gripper_close * (1.0 - two_side_gate)" in reward_source
+    assert "grasp_window = 1.0 - torch.tanh(d / 0.25)" in reward_source
+    assert "gated_gripper_close = gripper_close * single_side_gate" in reward_source
+    assert "air_close_penalty = gripper_close * (1.0 - single_side_gate)" in reward_source
     assert "early_close_penalty" not in reward_source
 
 
-def test_hier_couple_reward_uses_scaled_two_sided_contact_gate():
+def test_hier_couple_reward_uses_scaled_single_sided_contact_gate():
     reward_source = _read(MDP_ROOT / "rewards.py")
     progress_source = _read(MDP_ROOT / "contact_progress.py")
 
-    assert "+ 0.35 * two_side_gate" in reward_source
+    assert "+ 0.35 * single_side_gate" in reward_source
     assert "+ 0.55 * gated_gripper_close" in reward_source
     assert "- 0.05 * air_close_penalty" in reward_source
     assert "+ 0.30 * env.c_contact" not in reward_source
@@ -368,6 +365,19 @@ def test_hier_couple_reward_uses_scaled_two_sided_contact_gate():
     assert "two_side_contact = torch.minimum(thumb, support_side_contact)" in progress_source
     assert "grasp = two_side_contact * grip * close_allowed_gate" in progress_source
     assert "grasp = opposition * grip * close_allowed_gate" not in progress_source
+
+
+def test_hier_rewards_penalize_object_fall_from_env_fallen_flag():
+    reward_source = _read(MDP_ROOT / "rewards.py")
+    env_source = _read(CONFIG_ROOT / "g1_dex3_env.py")
+
+    assert "def object_fall_penalty(env) -> torch.Tensor:" in reward_source
+    assert "return env.object_fallen.float()" in reward_source
+    assert "object_fall = RewTerm(func=object_fall_penalty, weight=-2.0)" in reward_source
+    assert "def _object_fallen(self) -> torch.Tensor:" in env_source
+    assert 'object_root_z = self.scene["object"].data.root_pos_w[:, 2]' in env_source
+    assert "fall_threshold = self.scene.env_origins[:, 2] + 0.5 * OBJECT_PLATFORM_HEIGHT" in env_source
+    assert "return object_root_z < fall_threshold" in env_source
 
 
 def test_hier_wrist_commands_use_both_hand_tracking_error_penalty_without_xyz_hard_clamp():
