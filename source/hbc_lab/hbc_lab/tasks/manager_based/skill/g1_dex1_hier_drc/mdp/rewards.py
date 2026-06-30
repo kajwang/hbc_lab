@@ -13,14 +13,16 @@ def approach_reward(env) -> torch.Tensor:
 
 
 def couple_reward(env) -> torch.Tensor:
-    grasp_window = 1.0 - torch.tanh(env.d_active_hand / 0.15)
+    grasp_window = 1.0 - torch.tanh(env.d_active_hand / 0.35)
     gripper_close = env.active_grip
     gated_gripper_close = gripper_close * grasp_window
     early_close_penalty = gripper_close * (1.0 - grasp_window)
     return (
         0.35 * grasp_window
         + 0.35 * env.c_contact
-        + 0.20 * env.c_pinch
+        # Baseline A: require force-direction pinch in the couple reward.
+        # + 0.20 * env.c_pinch
+        + 0.20 * env.c_grasp
         + 0.10 * gated_gripper_close
         - 0.20 * early_close_penalty
     )

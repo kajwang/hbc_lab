@@ -18,6 +18,7 @@ from ..mdp.high_level_actions import HighLevelActionLimits, HighLevelCommandStat
 from ..mdp.low_level_observations import G1SphericalPostureLowLevelObsBuilder
 from ..mdp.low_level_policy import LowLevelPolicyWrapper
 from ..mdp.scenes import (
+    DEX1_LINK_CONTACT_SENSOR_NAMES,
     HAND_CENTER_FRAME_NAME,
     LEFT_GRIPPER_CONTACT_SENSOR_NAMES,
     RIGHT_GRIPPER_CONTACT_SENSOR_NAMES,
@@ -132,6 +133,14 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self._step_left_right_force_w = torch.zeros(self.num_envs, 3, device=self.device)
         self._step_right_left_force_w = torch.zeros(self.num_envs, 3, device=self.device)
         self._step_right_right_force_w = torch.zeros(self.num_envs, 3, device=self.device)
+        self._step_link_contact = {
+            f"{side}_{link_name}": torch.zeros(self.num_envs, device=self.device)
+            for side, link_name, _ in DEX1_LINK_CONTACT_SENSOR_NAMES
+        }
+        self._step_link_force = {
+            f"{side}_{link_name}": torch.zeros(self.num_envs, device=self.device)
+            for side, link_name, _ in DEX1_LINK_CONTACT_SENSOR_NAMES
+        }
 
     def _get_low_level_joint_info(self):
         if self._joint_ids is None:
@@ -165,6 +174,19 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         if len(sensor_names) != 2:
             raise RuntimeError(f"Dex1 {side} gripper expects two finger contact sensors, got {sensor_names}")
         return self._sum_sensor_force(sensor_names[0]), self._sum_sensor_force(sensor_names[1])
+
+    def _contact_confidence_from_force(self, force_w: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        force = torch.norm(force_w, dim=-1)
+        contact = 1.0 - torch.exp(-force / self.cfg.hand_contact_force_threshold)
+        return contact.clamp(0.0, 1.0), force
+
+    def _accumulate_link_contact_diagnostics(self) -> None:
+        for side, link_name, sensor_name in DEX1_LINK_CONTACT_SENSOR_NAMES:
+            key = f"{side}_{link_name}"
+            force_w = self._sum_sensor_force(sensor_name)
+            contact, force = self._contact_confidence_from_force(force_w)
+            self._step_link_contact[key] = torch.maximum(self._step_link_contact[key], contact)
+            self._step_link_force[key] = torch.maximum(self._step_link_force[key], force)
 
     def _accumulate_contact_components(self) -> None:
         left_left_force_w, left_right_force_w = self._dex1_gripper_finger_forces("left")
@@ -203,6 +225,7 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self._step_left_right_force_w = torch.where(left_active.unsqueeze(-1), left_right_force_w, self._step_left_right_force_w)
         self._step_right_left_force_w = torch.where(right_active.unsqueeze(-1), right_left_force_w, self._step_right_left_force_w)
         self._step_right_right_force_w = torch.where(right_active.unsqueeze(-1), right_right_force_w, self._step_right_right_force_w)
+        self._accumulate_link_contact_diagnostics()
 
     def _apply_low_level_action(self, low_action: torch.Tensor) -> torch.Tensor:
         robot = self.scene["robot"]
@@ -303,6 +326,21 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self.extras["log"]["HL/active_wrist_cmd_z_min_ratio"] = (active_wrist_pos_b[:, 2] <= lower[:, 2] + eps).float().mean()
         self.extras["log"]["HL/active_wrist_cmd_z_max_ratio"] = (active_wrist_pos_b[:, 2] >= upper[:, 2] - eps).float().mean()
 
+    def _log_link_contact_diagnostics(self) -> None:
+        for side, link_name, _ in DEX1_LINK_CONTACT_SENSOR_NAMES:
+            key = f"{side}_{link_name}"
+            self.extras["log"][f"ContactLink/{key}_mean"] = self._step_link_contact[key].mean()
+            self.extras["log"][f"ContactLink/{key}_force"] = self._step_link_force[key].mean()
+
+        left_active = self.active_hand == 0
+        for link_name in ("Link1_2", "Link1_3", "Link2_2", "Link2_3"):
+            left_key = f"left_{link_name}"
+            right_key = f"right_{link_name}"
+            active_contact = torch.where(left_active, self._step_link_contact[left_key], self._step_link_contact[right_key])
+            active_force = torch.where(left_active, self._step_link_force[left_key], self._step_link_force[right_key])
+            self.extras["log"][f"ContactLink/active_{link_name}_mean"] = active_contact.mean()
+            self.extras["log"][f"ContactLink/active_{link_name}_force"] = active_force.mean()
+
     def _compute_progress(self):
         object_pos_w = self._object_frame_pos_w()
         hand_center_pos_w = self.scene[HAND_CENTER_FRAME_NAME].data.target_pos_w
@@ -340,7 +378,9 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self.c_opposition = update_ema(self.c_opposition, progress.pinch, alpha=0.2)
         self.c_pinch = update_ema(self.c_pinch, progress.pinch, alpha=0.2)
         self.c_grasp = update_ema(self.c_grasp, progress.grasp, alpha=0.2)
-        self.c_couple = update_ema(self.c_couple, progress.pinch, alpha=0.2)
+        # Baseline A: enter manipulation only after two-finger pinch.
+        # self.c_couple = update_ema(self.c_couple, progress.pinch, alpha=0.2)
+        self.c_couple = update_ema(self.c_couple, progress.grasp, alpha=0.2)
         self.object_fallen = self._object_fallen()
         weights = compute_drc_weights(self.d_active_hand, self.c_couple, alpha=5.0)
         self.W_app = weights[:, 0]
@@ -498,6 +538,7 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self.extras["log"]["Contact/active_opposition_mean"] = self.active_opposition.mean()
         self.extras["log"]["Contact/active_pinch_score_mean"] = self.active_pinch_score.mean()
         self.extras["log"]["Contact/active_force_cos_sim_mean"] = self.active_contact_cos_sim.mean()
+        self._log_link_contact_diagnostics()
         self.extras["log"]["HL/left_grip_mean"] = self.command_state.left_grip.mean()
         self.extras["log"]["HL/right_grip_mean"] = self.command_state.right_grip.mean()
         self._log_high_level_diagnostics()

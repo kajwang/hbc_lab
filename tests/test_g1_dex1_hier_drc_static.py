@@ -47,6 +47,16 @@ def test_g1_dex1_asset_cfg_uses_official_unitree_gripper_asset_and_body_joint_or
     assert "joint_sdk_names=[\n        *G1_29DOF_BODY_JOINT_NAMES," in unitree_source
 
 
+def test_g1_dex1_gripper_uses_limit_endpoints_for_open_and_close_direction():
+    unitree_source = _read(ASSET_ROOT / "unitree.py")
+    gripper_source = _read(MDP_ROOT / "gripper.py")
+
+    assert '".*_hand_Joint[12]_1": 0.047' not in unitree_source
+    assert '".*_hand_Joint[12]_1": -0.02' in unitree_source
+    assert "DEX1_OPEN_POSITION = -0.02" in gripper_source
+    assert "DEX1_CLOSE_POSITION = 0.05" in gripper_source
+
+
 def test_g1_dex1_task_is_registered_separately_from_dex3():
     task_init = _read(TASK_ROOT / "__init__.py")
     tasks_init = _read(HBC_ROOT / "tasks/__init__.py")
@@ -73,13 +83,17 @@ def test_g1_dex1_uses_go2_style_two_finger_contact_progress_and_rewards():
     progress_source = _read(MDP_ROOT / "contact_progress.py")
     reward_source = _read(MDP_ROOT / "rewards.py")
     scenes_source = _read(MDP_ROOT / "scenes.py")
+    env_source = _read(CONFIG_ROOT / "g1_dex1_env.py")
 
     assert "def compute_gripper_contact_components" in progress_source
     assert "contact = torch.minimum(left_contact, right_contact)" in progress_source
     assert "pinch = contact * pinch_score" in progress_source
     assert "grasp = contact * grip * close_allowed_gate" in progress_source
     assert "0.35 * env.c_contact" in reward_source
-    assert "0.20 * env.c_pinch" in reward_source
+    assert "# + 0.20 * env.c_pinch" in reward_source
+    assert "+ 0.20 * env.c_grasp" in reward_source
+    assert "# self.c_couple = update_ema(self.c_couple, progress.pinch, alpha=0.2)" in env_source
+    assert "self.c_couple = update_ema(self.c_couple, progress.grasp, alpha=0.2)" in env_source
     assert "early_close_penalty" in reward_source
     assert "left_gripper_finger_contact" in scenes_source
     assert "right_gripper_finger_contact" in scenes_source
@@ -91,6 +105,32 @@ def test_g1_dex1_uses_go2_style_two_finger_contact_progress_and_rewards():
     assert "right_hand_Link2_3" in scenes_source
     assert "0.09734" in scenes_source
     assert ".*hand.*" in reward_source
+
+
+def test_g1_dex1_records_all_gripper_link_contact_diagnostics():
+    scenes_source = _read(MDP_ROOT / "scenes.py")
+    env_source = _read(CONFIG_ROOT / "g1_dex1_env.py")
+
+    assert "DEX1_LINK_CONTACT_SENSOR_NAMES" in scenes_source
+    assert "left_hand_Link1_2" in scenes_source
+    assert "left_hand_Link1_3" in scenes_source
+    assert "left_hand_Link2_2" in scenes_source
+    assert "left_hand_Link2_3" in scenes_source
+    assert "right_hand_Link1_2" in scenes_source
+    assert "right_hand_Link1_3" in scenes_source
+    assert "right_hand_Link2_2" in scenes_source
+    assert "right_hand_Link2_3" in scenes_source
+    assert "ContactLink/{key}_mean" in env_source
+    assert "ContactLink/active_{link_name}_force" in env_source
+
+
+def test_g1_dex1_high_level_wrist_commands_keep_workspace_as_diagnostics_only():
+    action_source = _read(MDP_ROOT / "high_level_actions.py")
+
+    assert "workspace_min" in action_source
+    assert "workspace_max" in action_source
+    assert "_clamp_position_to_workspace" not in action_source
+    assert "torch.maximum(torch.minimum(position, upper), lower)" not in action_source
 
 
 def test_g1_dex1_launch_entries_exist():

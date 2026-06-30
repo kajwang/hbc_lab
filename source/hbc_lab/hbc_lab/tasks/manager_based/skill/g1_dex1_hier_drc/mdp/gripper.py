@@ -12,8 +12,9 @@ HandSide = Literal["left", "right"]
 
 LEFT_DEX1_JOINT_PATTERNS = tuple(G1_DEX1_LEFT_GRIPPER_JOINT_NAMES)
 RIGHT_DEX1_JOINT_PATTERNS = tuple(G1_DEX1_RIGHT_GRIPPER_JOINT_NAMES)
-DEX1_OPEN_POSITION = 0.047
-DEX1_CLOSE_POSITION = 0.0
+# Unitree's Dex1 USD limits are [-0.02, 0.05]; positive travel moves both fingers inward.
+DEX1_OPEN_POSITION = -0.02
+DEX1_CLOSE_POSITION = 0.05
 
 
 def _grip_column(grip: torch.Tensor) -> torch.Tensor:

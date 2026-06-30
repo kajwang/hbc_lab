@@ -839,7 +839,7 @@ UNITREE_G1_29DOF_DEX1_CFG = UNITREE_G1_29DOF_CFG.replace(
             ".*_elbow_joint": 0.97,
             "left_wrist_roll_joint": 0.15,
             "right_wrist_roll_joint": -0.15,
-            ".*_hand_Joint[12]_1": 0.047,
+            ".*_hand_Joint[12]_1": -0.02,
         },
         joint_vel={".*": 0.0},
     ),

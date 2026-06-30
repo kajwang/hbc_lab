@@ -27,6 +27,16 @@ RIGHT_GRIPPER_CONTACT_SENSOR_NAMES = (
     "right_gripper_finger_contact",
     "right_gripper_opposing_finger_contact",
 )
+DEX1_LINK_CONTACT_SENSOR_NAMES = (
+    ("left", "Link1_2", "left_gripper_link1_2_contact"),
+    ("left", "Link1_3", "left_gripper_finger_contact"),
+    ("left", "Link2_2", "left_gripper_link2_2_contact"),
+    ("left", "Link2_3", "left_gripper_opposing_finger_contact"),
+    ("right", "Link1_2", "right_gripper_link1_2_contact"),
+    ("right", "Link1_3", "right_gripper_finger_contact"),
+    ("right", "Link2_2", "right_gripper_link2_2_contact"),
+    ("right", "Link2_3", "right_gripper_opposing_finger_contact"),
+)
 OBJECT_CONTACT_FILTER = ["{ENV_REGEX_NS}/object"]
 HAND_CENTER_FRAME_NAME = "hand_center_frame"
 HAND_CENTER_OFFSET = OffsetCfg(pos=(0.0, 0.09734, 0.0142))
@@ -97,8 +107,20 @@ class G1Dex1HierDrcSceneCfg(InteractiveSceneCfg):
         mesh_prim_paths=["/World/ground"],
     )
     contact_forces = ContactSensorCfg(prim_path="{ENV_REGEX_NS}/Robot/.*", history_length=3, track_air_time=True)
+    left_gripper_link1_2_contact = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/left_hand_Link1_2",
+        history_length=3,
+        track_air_time=False,
+        filter_prim_paths_expr=OBJECT_CONTACT_FILTER,
+    )
     left_gripper_finger_contact = ContactSensorCfg(
         prim_path="{ENV_REGEX_NS}/Robot/left_hand_Link1_3",
+        history_length=3,
+        track_air_time=False,
+        filter_prim_paths_expr=OBJECT_CONTACT_FILTER,
+    )
+    left_gripper_link2_2_contact = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/left_hand_Link2_2",
         history_length=3,
         track_air_time=False,
         filter_prim_paths_expr=OBJECT_CONTACT_FILTER,
@@ -109,8 +131,20 @@ class G1Dex1HierDrcSceneCfg(InteractiveSceneCfg):
         track_air_time=False,
         filter_prim_paths_expr=OBJECT_CONTACT_FILTER,
     )
+    right_gripper_link1_2_contact = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/right_hand_Link1_2",
+        history_length=3,
+        track_air_time=False,
+        filter_prim_paths_expr=OBJECT_CONTACT_FILTER,
+    )
     right_gripper_finger_contact = ContactSensorCfg(
         prim_path="{ENV_REGEX_NS}/Robot/right_hand_Link1_3",
+        history_length=3,
+        track_air_time=False,
+        filter_prim_paths_expr=OBJECT_CONTACT_FILTER,
+    )
+    right_gripper_link2_2_contact = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/right_hand_Link2_2",
         history_length=3,
         track_air_time=False,
         filter_prim_paths_expr=OBJECT_CONTACT_FILTER,
