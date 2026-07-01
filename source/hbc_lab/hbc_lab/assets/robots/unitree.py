@@ -825,6 +825,11 @@ UNITREE_G1_29DOF_DEX1_CFG = UNITREE_G1_29DOF_CFG.replace(
             f"{UNITREE_SIM_ISAACLAB_ASSETS_DIR}"
             "/robots/g1-29dof_wholebody_dex1/g1_29dof_with_dex1_rev_1_0.usd"
         ),
+        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            enabled_self_collisions=False,
+            solver_position_iteration_count=8,
+            solver_velocity_iteration_count=4,
+        ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
         pos=(0.0, 0.0, 0.8),
@@ -850,11 +855,12 @@ UNITREE_G1_29DOF_DEX1_CFG = UNITREE_G1_29DOF_CFG.replace(
                 *G1_DEX1_LEFT_GRIPPER_JOINT_NAMES,
                 *G1_DEX1_RIGHT_GRIPPER_JOINT_NAMES,
             ],
-            effort_limit_sim=20.0,
-            velocity_limit_sim=10.0,
-            stiffness=100.0,
-            damping=1.0,
-            armature=0.0005,
+            effort_limit=None,
+            velocity_limit=None,
+            stiffness=800.0,
+            damping=100.0,
+            friction=0.0,
+            armature=None,
         ),
     },
     joint_sdk_names=[

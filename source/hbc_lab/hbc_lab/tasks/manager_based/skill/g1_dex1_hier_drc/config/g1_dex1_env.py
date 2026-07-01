@@ -299,6 +299,7 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         return target_object_dist, wrist_tracking_error, hand_center_to_target_dist
 
     def _log_high_level_diagnostics(self):
+        robot = self.scene["robot"]
         active_wrist_pose_b, lower, upper = self._active_wrist_pose_and_limits()
         active_wrist_pos_b = active_wrist_pose_b[:, :3]
         left_active = self.active_hand == 0
@@ -325,6 +326,15 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self.extras["log"]["HL/active_wrist_cmd_y_max_ratio"] = (active_wrist_pos_b[:, 1] >= upper[:, 1] - eps).float().mean()
         self.extras["log"]["HL/active_wrist_cmd_z_min_ratio"] = (active_wrist_pos_b[:, 2] <= lower[:, 2] + eps).float().mean()
         self.extras["log"]["HL/active_wrist_cmd_z_max_ratio"] = (active_wrist_pos_b[:, 2] >= upper[:, 2] - eps).float().mean()
+        if self.gripper_controller.last_left_target is not None and self.gripper_controller.last_right_target is not None:
+            left_ids = self.gripper_controller.left_joint_ids
+            right_ids = self.gripper_controller.right_joint_ids
+            self.extras["log"]["HL/left_gripper_target_mean"] = self.gripper_controller.last_left_target.mean()
+            self.extras["log"]["HL/right_gripper_target_mean"] = self.gripper_controller.last_right_target.mean()
+            self.extras["log"]["HL/left_gripper_joint_pos_mean"] = robot.data.joint_pos[:, left_ids].mean()
+            self.extras["log"]["HL/right_gripper_joint_pos_mean"] = robot.data.joint_pos[:, right_ids].mean()
+            self.extras["log"]["HL/left_gripper_target_buffer_mean"] = robot.data.joint_pos_target[:, left_ids].mean()
+            self.extras["log"]["HL/right_gripper_target_buffer_mean"] = robot.data.joint_pos_target[:, right_ids].mean()
 
     def _log_link_contact_diagnostics(self) -> None:
         for side, link_name, _ in DEX1_LINK_CONTACT_SENSOR_NAMES:

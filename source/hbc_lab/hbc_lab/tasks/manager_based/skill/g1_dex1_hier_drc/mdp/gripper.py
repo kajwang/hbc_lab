@@ -14,7 +14,7 @@ LEFT_DEX1_JOINT_PATTERNS = tuple(G1_DEX1_LEFT_GRIPPER_JOINT_NAMES)
 RIGHT_DEX1_JOINT_PATTERNS = tuple(G1_DEX1_RIGHT_GRIPPER_JOINT_NAMES)
 # Unitree's Dex1 USD limits are [-0.02, 0.05]; positive travel moves both fingers inward.
 DEX1_OPEN_POSITION = -0.02
-DEX1_CLOSE_POSITION = 0.05
+DEX1_CLOSE_POSITION = 0.024
 
 
 def _grip_column(grip: torch.Tensor) -> torch.Tensor:
@@ -52,6 +52,8 @@ class Dex1GripperController:
         self.device = torch.device(device)
         self.left_joint_ids = self._find_joint_ids(LEFT_DEX1_JOINT_PATTERNS, side="left")
         self.right_joint_ids = self._find_joint_ids(RIGHT_DEX1_JOINT_PATTERNS, side="right")
+        self.last_left_target: torch.Tensor | None = None
+        self.last_right_target: torch.Tensor | None = None
 
     def _find_joint_ids(self, patterns: tuple[str, ...], side: HandSide) -> list[int]:
         seen: set[int] = set()
@@ -76,4 +78,6 @@ class Dex1GripperController:
         right_target = self._target(right_grip, len(self.right_joint_ids))
         self.robot.set_joint_position_target(left_target, joint_ids=self.left_joint_ids)
         self.robot.set_joint_position_target(right_target, joint_ids=self.right_joint_ids)
+        self.last_left_target = left_target.detach()
+        self.last_right_target = right_target.detach()
         return left_target, right_target

@@ -52,9 +52,12 @@ def test_g1_dex1_gripper_uses_limit_endpoints_for_open_and_close_direction():
     gripper_source = _read(MDP_ROOT / "gripper.py")
 
     assert '".*_hand_Joint[12]_1": 0.047' not in unitree_source
-    assert '".*_hand_Joint[12]_1": -0.02' in unitree_source
+    assert '".*_hand_Joint[12]_1": 0.0' in unitree_source
     assert "DEX1_OPEN_POSITION = -0.02" in gripper_source
-    assert "DEX1_CLOSE_POSITION = 0.05" in gripper_source
+    assert "DEX1_CLOSE_POSITION = 0.024" in gripper_source
+    assert "enabled_self_collisions=False" in unitree_source
+    assert "stiffness=800.0" in unitree_source
+    assert "friction=200.0" in unitree_source
 
 
 def test_g1_dex1_task_is_registered_separately_from_dex3():
@@ -77,6 +80,9 @@ def test_g1_dex1_hier_env_reuses_current_low_level_policy_interface():
     assert "self.low_level_obs_builder.build(" in env_source
     assert "Dex1GripperController" in env_source
     assert "self.gripper_controller.apply(self.command_state.left_grip, self.command_state.right_grip)" in env_source
+    assert "HL/left_gripper_target_mean" in env_source
+    assert "HL/right_gripper_joint_pos_mean" in env_source
+    assert "HL/right_gripper_target_buffer_mean" in env_source
 
 
 def test_g1_dex1_uses_go2_style_two_finger_contact_progress_and_rewards():
