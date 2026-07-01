@@ -89,7 +89,8 @@ def test_g1_dex1_uses_go2_style_two_finger_contact_progress_and_rewards():
     assert "contact = torch.minimum(left_contact, right_contact)" in progress_source
     assert "pinch = contact * pinch_score" in progress_source
     assert "grasp = contact * grip * close_allowed_gate" in progress_source
-    assert "0.35 * env.c_contact" in reward_source
+    assert "def active_inner_pad_contact" in reward_source
+    assert "0.35 * pad_gate" in reward_source
     assert "# + 0.20 * env.c_pinch" in reward_source
     assert "+ 0.20 * env.c_grasp" in reward_source
     assert "# self.c_couple = update_ema(self.c_couple, progress.pinch, alpha=0.2)" in env_source
