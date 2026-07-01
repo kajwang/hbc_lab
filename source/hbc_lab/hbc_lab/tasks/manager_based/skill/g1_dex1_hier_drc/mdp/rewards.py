@@ -20,13 +20,13 @@ def active_inner_pad_contact(env) -> torch.Tensor:
         return torch.zeros_like(env.d_active_hand)
 
     left_active = env.active_hand == 0
-    left_link1_2 = env._step_link_contact["left_Link1_2"]
-    left_link2_2 = env._step_link_contact["left_Link2_2"]
-    right_link1_2 = env._step_link_contact["right_Link1_2"]
-    right_link2_2 = env._step_link_contact["right_Link2_2"]
-    active_link1_2 = torch.where(left_active, left_link1_2, right_link1_2)
-    active_link2_2 = torch.where(left_active, left_link2_2, right_link2_2)
-    return torch.maximum(active_link1_2, active_link2_2)
+    left_link1_3 = env._step_link_contact["left_Link1_3"]
+    left_link2_3 = env._step_link_contact["left_Link2_3"]
+    right_link1_3 = env._step_link_contact["right_Link1_3"]
+    right_link2_3 = env._step_link_contact["right_Link2_3"]
+    active_link1_3 = torch.where(left_active, left_link1_3, right_link1_3)
+    active_link2_3 = torch.where(left_active, left_link2_3, right_link2_3)
+    return torch.maximum(active_link1_3, active_link2_3)
 
 
 def couple_reward(env) -> torch.Tensor:

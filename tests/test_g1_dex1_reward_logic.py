@@ -16,11 +16,11 @@ def test_dex1_couple_reward_uses_single_inner_pad_contact_gate():
     reward_source = _reward_source()
 
     assert "def active_inner_pad_contact" in reward_source
-    assert '"left_Link1_2"' in reward_source
-    assert '"left_Link2_2"' in reward_source
-    assert '"right_Link1_2"' in reward_source
-    assert '"right_Link2_2"' in reward_source
-    assert "torch.maximum(active_link1_2, active_link2_2)" in reward_source
+    assert '"left_Link1_3"' in reward_source
+    assert '"left_Link2_3"' in reward_source
+    assert '"right_Link1_3"' in reward_source
+    assert '"right_Link2_3"' in reward_source
+    assert "torch.maximum(active_link1_3, active_link2_3)" in reward_source
     assert "pad_gate = torch.clamp(inner_pad_contact / INNER_PAD_CONTACT_GATE_SCALE" in reward_source
     assert "close_gate = torch.maximum(grasp_window, pad_gate)" in reward_source
 
