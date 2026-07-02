@@ -114,6 +114,20 @@ def _body_pose_command_position_distance_w(
     return torch.norm(target_pos_w - current_pos_w, dim=-1)
 
 
+def _frame_pose_command_position_distance_w(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    frame_sensor_name: str,
+    frame_index: int,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    asset: RigidObject = env.scene[asset_cfg.name]
+    frame_sensor = env.scene[frame_sensor_name]
+    target_pos_w, _ = _body_pose_command_target_w(env, command_name, asset)
+    current_pos_w = frame_sensor.data.target_pos_w[:, frame_index]
+    return torch.norm(target_pos_w - current_pos_w, dim=-1)
+
+
 def body_pose_command_position_error_l2(
     env: ManagerBasedRLEnv,
     command_name: str,
@@ -176,6 +190,43 @@ def body_pose_command_position_error_w_tanh(
     return 1.0 - torch.tanh(distance / std)
 
 
+def frame_pose_command_position_error_w_l2(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    frame_sensor_name: str,
+    frame_index: int,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize FrameTransformer target-frame position error to a command world target."""
+    return _frame_pose_command_position_distance_w(env, command_name, frame_sensor_name, frame_index, asset_cfg)
+
+
+def frame_pose_command_position_error_w_exp(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    std: float,
+    frame_sensor_name: str,
+    frame_index: int,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Reward FrameTransformer target-frame position tracking against a command world target."""
+    distance = _frame_pose_command_position_distance_w(env, command_name, frame_sensor_name, frame_index, asset_cfg)
+    return torch.exp(-torch.square(distance) / std**2)
+
+
+def frame_pose_command_position_error_w_tanh(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    std: float,
+    frame_sensor_name: str,
+    frame_index: int,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Reward fine FrameTransformer target-frame position tracking against a command world target."""
+    distance = _frame_pose_command_position_distance_w(env, command_name, frame_sensor_name, frame_index, asset_cfg)
+    return 1.0 - torch.tanh(distance / std)
+
+
 def _body_pose_command_orientation_distance(
     env: ManagerBasedRLEnv,
     command_name: str,
@@ -196,6 +247,20 @@ def _body_pose_command_orientation_distance_w(
     asset: RigidObject = env.scene[asset_cfg.name]
     _, target_quat_w = _body_pose_command_target_w(env, command_name, asset)
     current_quat_w = asset.data.body_quat_w[:, asset_cfg.body_ids[0]]
+    return quat_error_magnitude(current_quat_w, target_quat_w)
+
+
+def _frame_pose_command_orientation_distance_w(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    frame_sensor_name: str,
+    frame_index: int,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    asset: RigidObject = env.scene[asset_cfg.name]
+    frame_sensor = env.scene[frame_sensor_name]
+    _, target_quat_w = _body_pose_command_target_w(env, command_name, asset)
+    current_quat_w = frame_sensor.data.target_quat_w[:, frame_index]
     return quat_error_magnitude(current_quat_w, target_quat_w)
 
 
@@ -227,6 +292,19 @@ def body_pose_command_orientation_error_w_tanh(
 ) -> torch.Tensor:
     """Reward body-orientation tracking against a command term's world-frame target."""
     distance = _body_pose_command_orientation_distance_w(env, command_name, asset_cfg)
+    return 1.0 - torch.tanh(distance / std)
+
+
+def frame_pose_command_orientation_error_w_tanh(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    std: float,
+    frame_sensor_name: str,
+    frame_index: int,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Reward FrameTransformer target-frame orientation tracking against a command world target."""
+    distance = _frame_pose_command_orientation_distance_w(env, command_name, frame_sensor_name, frame_index, asset_cfg)
     return 1.0 - torch.tanh(distance / std)
 
 

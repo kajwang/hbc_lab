@@ -30,21 +30,26 @@ def active_inner_pad_contact(env) -> torch.Tensor:
 
 
 def couple_reward(env) -> torch.Tensor:
-    grasp_window = 1.0 - torch.tanh(env.d_active_hand / 0.35)
+    near = 1.0 - torch.tanh(env.d_active_hand / 0.35)
+    grasp_window = 1.0 - torch.tanh(env.d_active_hand / 0.1)
     inner_pad_contact = active_inner_pad_contact(env)
     pad_gate = torch.clamp(inner_pad_contact / INNER_PAD_CONTACT_GATE_SCALE, min=0.0, max=1.0)
     close_gate = torch.maximum(grasp_window, pad_gate)
     gripper_close = env.active_grip
-    gated_gripper_close = gripper_close * close_gate
-    early_close_penalty = gripper_close * (1.0 - close_gate)
+    gated_gripper_close1 = gripper_close * pad_gate
+    early_close_penalty1 = gripper_close * (1.0 - pad_gate)
+    gated_gripper_close2 = gripper_close * grasp_window
+    early_close_penalty2 = gripper_close * (1.0 - grasp_window)
     return (
-        0.65 * grasp_window
-        + 0.35 * pad_gate
+        1.5 * near
+        + 0.50 * pad_gate
         # Baseline A: require force-direction pinch in the couple reward.
         # + 0.20 * env.c_pinch
         + 0.20 * env.c_grasp
-        + 0.30 * gated_gripper_close
-        - 0.05 * early_close_penalty
+        + 0.50 * gated_gripper_close1
+        - 0.50 * early_close_penalty1
+        + 0.50 * gated_gripper_close2
+        - 0.50 * early_close_penalty2
     )
 
 

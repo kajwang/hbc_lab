@@ -37,6 +37,7 @@ class SphericalPoseCommand(CommandTerm):
         self.robot: Articulation = env.scene[cfg.asset_name]
         self.body_idx = self.robot.find_bodies(cfg.body_name)[0][0]
         self.anchor_body_idx = self.robot.find_bodies(cfg.anchor_body_name)[0][0]
+        self.tracked_frame = env.scene[cfg.tracked_frame_sensor_name] if cfg.tracked_frame_sensor_name else None
 
         self.spherical_command = torch.zeros(self.num_envs, 3, device=self.device)
         self.pose_command_b = torch.zeros(self.num_envs, 7, device=self.device)
@@ -107,15 +108,24 @@ class SphericalPoseCommand(CommandTerm):
 
     def _update_metrics(self):
         self._update_pose_command_w()
+        current_pos_w, current_quat_w = self._current_pose_w()
 
         pos_error, rot_error = compute_pose_error(
             self.pose_command_w[:, :3],
             self.pose_command_w[:, 3:],
-            self.robot.data.body_pos_w[:, self.body_idx],
-            self.robot.data.body_quat_w[:, self.body_idx],
+            current_pos_w,
+            current_quat_w,
         )
         self.metrics["position_error"] = torch.norm(pos_error, dim=-1)
         self.metrics["orientation_error"] = torch.norm(rot_error, dim=-1)
+
+    def _current_pose_w(self) -> tuple[torch.Tensor, torch.Tensor]:
+        if self.tracked_frame is not None:
+            return (
+                self.tracked_frame.data.target_pos_w[:, self.cfg.tracked_frame_index],
+                self.tracked_frame.data.target_quat_w[:, self.cfg.tracked_frame_index],
+            )
+        return self.robot.data.body_pos_w[:, self.body_idx], self.robot.data.body_quat_w[:, self.body_idx]
 
     def _resample_command(self, env_ids: Sequence[int]):
         r = torch.empty(len(env_ids), device=self.device)
@@ -156,8 +166,8 @@ class SphericalPoseCommand(CommandTerm):
         if not self.robot.is_initialized:
             return
         self.goal_pose_visualizer.visualize(self.pose_command_w[:, :3], self.pose_command_w[:, 3:])
-        body_pose_w = self.robot.data.body_link_pose_w[:, self.body_idx]
-        self.current_pose_visualizer.visualize(body_pose_w[:, :3], body_pose_w[:, 3:7])
+        current_pos_w, current_quat_w = self._current_pose_w()
+        self.current_pose_visualizer.visualize(current_pos_w, current_quat_w)
 
 
 @configclass
@@ -169,6 +179,8 @@ class SphericalLevelPoseCommandCfg(CommandTermCfg):
     asset_name: str = MISSING
     body_name: str = MISSING
     anchor_body_name: str = MISSING
+    tracked_frame_sensor_name: str | None = None
+    tracked_frame_index: int = 0
     anchor_height_command_name: str | None = None
     anchor_height_command_index: int = 0
     anchor_height_offset: float = 0.0

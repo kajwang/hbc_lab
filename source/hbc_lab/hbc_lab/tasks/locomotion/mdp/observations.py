@@ -62,6 +62,33 @@ def body_pose_in_root_frame(
     return torch.cat((body_pos_b, body_quat_b), dim=-1).reshape(env.num_envs, -1)
 
 
+def frame_transformer_pose_in_root_frame(
+    env: ManagerBasedRLEnv,
+    frame_sensor_name: str,
+    frame_index: int,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    return_key: Literal["pos", "quat", None] = None,
+) -> torch.Tensor:
+    """Return a FrameTransformer target frame pose expressed in the robot root frame."""
+    asset: Articulation = env.scene[asset_cfg.name]
+    frame_sensor = env.scene[frame_sensor_name]
+
+    frame_pos_w = frame_sensor.data.target_pos_w[:, frame_index]
+    frame_quat_w = frame_sensor.data.target_quat_w[:, frame_index]
+    frame_pos_b, frame_quat_b = subtract_frame_transforms(
+        asset.data.root_pos_w,
+        asset.data.root_quat_w,
+        frame_pos_w,
+        frame_quat_w,
+    )
+
+    if return_key == "pos":
+        return frame_pos_b
+    if return_key == "quat":
+        return frame_quat_b
+    return torch.cat((frame_pos_b, frame_quat_b), dim=-1)
+
+
 def body_pose_command_position_error_in_root_frame(
     env: ManagerBasedRLEnv,
     command_name: str,
@@ -70,6 +97,27 @@ def body_pose_command_position_error_in_root_frame(
     """Return root-frame target minus current body position for a pose command."""
     target_pos_b = env.command_manager.get_command(command_name)[:, :3]
     current_pos_b = body_pose_in_root_frame(env, asset_cfg=asset_cfg, return_key="pos")[:, :3]
+    return target_pos_b - current_pos_b
+
+
+def frame_transformer_pose_command_position_error_w_in_root_frame(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    frame_sensor_name: str,
+    frame_index: int,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Return root-frame command target minus current FrameTransformer target-frame position."""
+    asset: Articulation = env.scene[asset_cfg.name]
+    target_pos_w = _body_pose_command_target_pos_w(env, command_name, asset)
+    target_pos_b, _ = subtract_frame_transforms(asset.data.root_pos_w, asset.data.root_quat_w, target_pos_w)
+    current_pos_b = frame_transformer_pose_in_root_frame(
+        env,
+        frame_sensor_name=frame_sensor_name,
+        frame_index=frame_index,
+        asset_cfg=asset_cfg,
+        return_key="pos",
+    )
     return target_pos_b - current_pos_b
 
 
