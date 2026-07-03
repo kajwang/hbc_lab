@@ -23,8 +23,8 @@ def test_dex1_hand_center_low_level_task_is_registered_and_launchable():
         "whole_body_spherical_posture_dex1_hand_center_env_cfg:SphericalPostureDex1HandCenterPlayEnvCfg"
         in init_source
     )
-    assert '"name": "g1_whole_body_spherical_posture_dex1_hand_center_train"' in launch_source
-    assert '"name": "g1_whole_body_spherical_posture_dex1_hand_center_play"' in launch_source
+    assert '"name": "g1_whole_body_spherical_posture_dex1_train"' in launch_source
+    assert '"name": "g1_whole_body_spherical_posture_dex1_play"' in launch_source
     assert "--task=HBC-Isaac-WholeBody-SphericalPosture-Dex1HandCenter-Unitree-G1-v0" in launch_source
 
 
@@ -47,7 +47,7 @@ def test_dex1_hand_center_task_uses_dex1_body_policy_dims_and_hand_center_frames
     assert "joint_vel[:, len(body_joint_ids) :] = 0.0" in source
 
 
-def test_dex1_hand_center_task_tracks_frame_transformer_pose_with_conservative_orientation_ranges():
+def test_dex1_hand_center_task_tracks_frame_transformer_pose_with_wide_roll_and_moderate_pitch_yaw_ranges():
     source = _read(G1_ROOT / "whole_body_spherical_posture_dex1_hand_center_env_cfg.py")
     reward_source = _read(MDP_ROOT / "rewards.py")
     observation_source = _read(MDP_ROOT / "observations.py")
@@ -58,12 +58,12 @@ def test_dex1_hand_center_task_tracks_frame_transformer_pose_with_conservative_o
     assert "tracked_frame_sensor_name=HAND_CENTER_FRAME_NAME" in source
     assert "tracked_frame_index=0" in source
     assert "tracked_frame_index=1" in source
-    assert "roll=(-0.08, 0.08)" in source
-    assert "ee_pitch=(-0.08, 0.08)" in source
-    assert "yaw=(-0.08, 0.08)" in source
-    assert "roll=(-0.20, 0.20)" in source
-    assert "ee_pitch=(-0.20, 0.20)" in source
-    assert "yaw=(-0.20, 0.20)" in source
+    assert source.count("roll=(-0.50, 0.50)") == 2
+    assert source.count("roll=(-math.pi, math.pi)") == 2
+    assert source.count("ee_pitch=(-0.12, 0.12)") == 2
+    assert source.count("ee_pitch=(-0.40, 0.40)") == 2
+    assert source.count("yaw=(-0.12, 0.12)") == 2
+    assert source.count("yaw=(-0.40, 0.40)") == 2
     assert "func=mdp.frame_transformer_pose_command_position_error_w_in_root_frame" in source
     assert "func=mdp.frame_pose_command_position_error_w_exp" in source
     assert "func=mdp.frame_pose_command_position_error_w_tanh" in source
@@ -75,10 +75,12 @@ def test_dex1_hand_center_task_tracks_frame_transformer_pose_with_conservative_o
     assert "def frame_pose_command_orientation_error_w_tanh" in reward_source
     assert "tracked_frame_sensor_name: str | None = None" in command_source
     assert "target_pos_w[:, self.cfg.tracked_frame_index]" in command_source
+    assert source.count("weight=0.30") == 2
 
 
 def test_dex1_hand_center_task_disables_terrain_level_curriculum_but_keeps_other_curricula():
     source = _read(G1_ROOT / "whole_body_spherical_posture_dex1_hand_center_env_cfg.py")
+    curriculum_source = _read(MDP_ROOT / "curriculums.py")
 
     train_source = source.split("class SphericalPostureDex1HandCenterEnvCfg")[1].split(
         "class SphericalPostureDex1HandCenterPlayEnvCfg"
@@ -87,7 +89,19 @@ def test_dex1_hand_center_task_disables_terrain_level_curriculum_but_keeps_other
     assert "self.curriculum.terrain_levels = None" in source
     assert "self.curriculum.lin_vel_cmd_levels = None" not in train_source
     assert "wrist_pose_cmd_levels = CurrTerm" in source
+    assert "orientation_cmd_levels = CurrTerm" in source
+    assert "func=mdp.spherical_pose_orientation_cmd_levels" in source
+    assert '"reward_term_names": ("track_left_wrist_orientation", "track_right_wrist_orientation")' in source
+    assert '"roll_delta": 0.35' in source
+    assert '"ee_pitch_delta": 0.04' in source
+    assert '"yaw_delta": 0.04' in source
     assert "posture_cmd_levels = CurrTerm" in source
     assert "self.curriculum.lin_vel_cmd_levels = None" in source
     assert "self.curriculum.wrist_pose_cmd_levels = None" in source
+    assert "self.curriculum.orientation_cmd_levels = None" in source
     assert "self.curriculum.posture_cmd_levels = None" in source
+    assert "def spherical_pose_orientation_cmd_levels" in curriculum_source
+    assert "ranges.roll = _expand_uniform_range" in curriculum_source
+    assert "ranges.ee_pitch = _expand_uniform_range" in curriculum_source
+    assert "ranges.yaw = _expand_uniform_range" in curriculum_source
+    assert 'for range_name in ("roll", "ee_pitch", "yaw")' in curriculum_source

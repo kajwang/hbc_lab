@@ -240,6 +240,51 @@ def spherical_pose_radius_cmd_levels(
     return torch.mean(torch.stack(progress)) if progress else torch.tensor(0.0, device=env.device)
 
 
+def spherical_pose_orientation_cmd_levels(
+    env: ManagerBasedRLEnv,
+    env_ids: Sequence[int],
+    command_names: tuple[str, ...] = ("left_wrist_pose", "right_wrist_pose"),
+    reward_term_names: tuple[str, ...] = ("track_left_wrist_orientation", "track_right_wrist_orientation"),
+    success_threshold: float = 0.65,
+    roll_delta: float = 0.35,
+    ee_pitch_delta: float = 0.04,
+    yaw_delta: float = 0.04,
+) -> torch.Tensor:
+    """Expand spherical pose-command orientation ranges after orientation tracking is reliable."""
+    rewards = []
+    for reward_term_name in reward_term_names:
+        reward_term = env.reward_manager.get_term_cfg(reward_term_name)
+        if reward_term.weight <= 0.0:
+            continue
+        episode_reward = torch.mean(env.reward_manager._episode_sums[reward_term_name][env_ids])
+        rewards.append(episode_reward / env.max_episode_length_s / reward_term.weight)
+
+    tracking_score = torch.mean(torch.stack(rewards)) if rewards else torch.tensor(0.0, device=env.device)
+
+    if env.common_step_counter % env.max_episode_length == 0 and tracking_score > success_threshold:
+        for command_name in command_names:
+            command_term = env.command_manager.get_term(command_name)
+            ranges = command_term.cfg.ranges
+            limit_ranges = command_term.cfg.limit_ranges
+            ranges.roll = _expand_uniform_range(ranges.roll, limit_ranges.roll, roll_delta, env.device)
+            ranges.ee_pitch = _expand_uniform_range(ranges.ee_pitch, limit_ranges.ee_pitch, ee_pitch_delta, env.device)
+            ranges.yaw = _expand_uniform_range(ranges.yaw, limit_ranges.yaw, yaw_delta, env.device)
+
+    progress = []
+    for command_name in command_names:
+        command_term = env.command_manager.get_term(command_name)
+        ranges = command_term.cfg.ranges
+        limit_ranges = command_term.cfg.limit_ranges
+        for range_name in ("roll", "ee_pitch", "yaw"):
+            current_range = getattr(ranges, range_name)
+            limit_range = getattr(limit_ranges, range_name)
+            current_width = torch.tensor(current_range[1] - current_range[0], device=env.device)
+            limit_width = torch.tensor(limit_range[1] - limit_range[0], device=env.device)
+            progress.append(current_width / limit_width)
+
+    return torch.mean(torch.stack(progress)) if progress else torch.tensor(0.0, device=env.device)
+
+
 def posture_cmd_levels(
     env: ManagerBasedRLEnv,
     env_ids: Sequence[int],

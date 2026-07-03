@@ -94,17 +94,17 @@ class Dex1HandCenterCommandsCfg(SphericalPostureWholeBodyCommandsCfg):
             l=(0.30, 0.48),
             pitch=(-0.5 * math.pi, 0.0),
             azimuth=(0.0, 0.5 * math.pi),
-            roll=(-0.08, 0.08),
-            ee_pitch=(-0.08, 0.08),
-            yaw=(-0.08, 0.08),
+            roll=(-0.50, 0.50),
+            ee_pitch=(-0.12, 0.12),
+            yaw=(-0.12, 0.12),
         ),
         limit_ranges=mdp.SphericalLevelPoseCommandCfg.Ranges(
             l=(0.22, 0.68),
             pitch=(-0.5 * math.pi, 0.0),
             azimuth=(0.0, 0.5 * math.pi),
-            roll=(-0.20, 0.20),
-            ee_pitch=(-0.20, 0.20),
-            yaw=(-0.20, 0.20),
+            roll=(-math.pi, math.pi),
+            ee_pitch=(-0.40, 0.40),
+            yaw=(-0.40, 0.40),
         ),
     )
 
@@ -122,17 +122,17 @@ class Dex1HandCenterCommandsCfg(SphericalPostureWholeBodyCommandsCfg):
             l=(0.30, 0.48),
             pitch=(-0.5 * math.pi, 0.0),
             azimuth=(-0.5 * math.pi, 0.0),
-            roll=(-0.08, 0.08),
-            ee_pitch=(-0.08, 0.08),
-            yaw=(-0.08, 0.08),
+            roll=(-0.50, 0.50),
+            ee_pitch=(-0.12, 0.12),
+            yaw=(-0.12, 0.12),
         ),
         limit_ranges=mdp.SphericalLevelPoseCommandCfg.Ranges(
             l=(0.22, 0.68),
             pitch=(-0.5 * math.pi, 0.0),
             azimuth=(-0.5 * math.pi, 0.0),
-            roll=(-0.20, 0.20),
-            ee_pitch=(-0.20, 0.20),
-            yaw=(-0.20, 0.20),
+            roll=(-math.pi, math.pi),
+            ee_pitch=(-0.40, 0.40),
+            yaw=(-0.40, 0.40),
         ),
     )
 
@@ -254,7 +254,7 @@ class Dex1HandCenterRewardsCfg(SphericalPostureWholeBodyRewardsCfg):
     )
     track_left_wrist_orientation = RewTerm(
         func=mdp.frame_pose_command_orientation_error_w_tanh,
-        weight=0.03,
+        weight=0.50,
         params={
             "command_name": "left_wrist_pose",
             "std": 0.75,
@@ -264,7 +264,7 @@ class Dex1HandCenterRewardsCfg(SphericalPostureWholeBodyRewardsCfg):
     )
     track_right_wrist_orientation = RewTerm(
         func=mdp.frame_pose_command_orientation_error_w_tanh,
-        weight=0.03,
+        weight=0.50,
         params={
             "command_name": "right_wrist_pose",
             "std": 0.75,
@@ -305,6 +305,17 @@ class Dex1HandCenterCurriculumCfg(velocity_env_cfg.CurriculumCfg):
             "penalty_term_names": ("penalty_left_wrist_pose_error", "penalty_right_wrist_pose_error"),
             "success_threshold": 0.08,
             "radius_delta": 0.03,
+        },
+    )
+    orientation_cmd_levels = CurrTerm(
+        func=mdp.spherical_pose_orientation_cmd_levels,
+        params={
+            "command_names": ("left_wrist_pose", "right_wrist_pose"),
+            "reward_term_names": ("track_left_wrist_orientation", "track_right_wrist_orientation"),
+            "success_threshold": 0.65,
+            "roll_delta": 0.35,
+            "ee_pitch_delta": 0.04,
+            "yaw_delta": 0.04,
         },
     )
     posture_cmd_levels = CurrTerm(
@@ -418,6 +429,7 @@ class SphericalPostureDex1HandCenterPlayEnvCfg(SphericalPostureDex1HandCenterEnv
         self.curriculum.terrain_levels = None
         self.curriculum.lin_vel_cmd_levels = None
         self.curriculum.wrist_pose_cmd_levels = None
+        self.curriculum.orientation_cmd_levels = None
         self.curriculum.posture_cmd_levels = None
         self.commands.left_wrist_pose.debug_vis = True
         self.commands.right_wrist_pose.debug_vis = True
