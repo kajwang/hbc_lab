@@ -139,11 +139,20 @@ class SphericalPoseCommand(CommandTerm):
         euler_angles[:, 0].uniform_(*self.cfg.ranges.roll)
         euler_angles[:, 1].uniform_(*self.cfg.ranges.ee_pitch)
         euler_angles[:, 2].uniform_(*self.cfg.ranges.yaw)
-        quat = quat_from_euler_xyz(
-            euler_angles[:, 0],
-            euler_angles[:, 1],
-            euler_angles[:, 2] + self.spherical_command[env_ids, 2] + self.cfg.orientation_yaw_offset,
-        )
+        if self.cfg.orientation_mode == "local_delta":
+            delta_quat = quat_from_euler_xyz(euler_angles[:, 0], euler_angles[:, 1], euler_angles[:, 2])
+            zeros = torch.zeros_like(euler_angles[:, 2])
+            nominal_yaw = torch.full_like(euler_angles[:, 2], self.cfg.orientation_yaw_offset)
+            nominal_quat = quat_from_euler_xyz(zeros, zeros, nominal_yaw)
+            quat = quat_mul(nominal_quat, delta_quat)
+        elif self.cfg.orientation_mode == "azimuth":
+            quat = quat_from_euler_xyz(
+                euler_angles[:, 0],
+                euler_angles[:, 1],
+                euler_angles[:, 2] + self.spherical_command[env_ids, 2] + self.cfg.orientation_yaw_offset,
+            )
+        else:
+            raise ValueError(f"Unsupported orientation mode: {self.cfg.orientation_mode}")
         self.pose_command_b[env_ids, 3:] = quat_unique(quat) if self.cfg.make_quat_unique else quat
         self._update_pose_command_w()
 
@@ -188,6 +197,7 @@ class SphericalLevelPoseCommandCfg(CommandTermCfg):
     anchor_pitch_command_index: int = 1
     anchor_pitch_scale: float = 1.0
     anchor_pitch_offset: float = 0.0
+    orientation_mode: str = "azimuth"
     orientation_yaw_offset: float = 0.0
     fixed_anchor_height: float | None = None
     make_quat_unique: bool = False

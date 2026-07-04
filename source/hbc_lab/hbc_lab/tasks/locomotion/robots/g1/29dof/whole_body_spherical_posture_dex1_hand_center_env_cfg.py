@@ -38,6 +38,8 @@ HAND_CENTER_FRAME_MARKER_CFG = FRAME_MARKER_CFG.replace(
     prim_path="/Visuals/G1Dex1LowLevel/hand_center_frame"
 )
 HAND_CENTER_FRAME_MARKER_CFG.markers["frame"].scale = (0.07, 0.07, 0.07)
+WRIST_LOCAL_ROLL_LIMIT = 1.70
+WRIST_LOCAL_PITCH_YAW_LIMIT = 1.00
 
 
 @configclass
@@ -90,6 +92,7 @@ class Dex1HandCenterCommandsCfg(SphericalPostureWholeBodyCommandsCfg):
         resampling_time_range=(2.0, 4.0),
         debug_vis=True,
         make_quat_unique=True,
+        orientation_mode="local_delta",
         orientation_yaw_offset=-0.5 * math.pi,
         ranges=mdp.SphericalLevelPoseCommandCfg.Ranges(
             l=(0.30, 0.48),
@@ -103,9 +106,9 @@ class Dex1HandCenterCommandsCfg(SphericalPostureWholeBodyCommandsCfg):
             l=(0.22, 0.68),
             pitch=(-0.5 * math.pi, 0.0),
             azimuth=(0.0, 0.5 * math.pi),
-            roll=(-math.pi, math.pi),
-            ee_pitch=(-0.40, 0.40),
-            yaw=(-0.40, 0.40),
+            roll=(-WRIST_LOCAL_ROLL_LIMIT, WRIST_LOCAL_ROLL_LIMIT),
+            ee_pitch=(-WRIST_LOCAL_PITCH_YAW_LIMIT, WRIST_LOCAL_PITCH_YAW_LIMIT),
+            yaw=(-WRIST_LOCAL_PITCH_YAW_LIMIT, WRIST_LOCAL_PITCH_YAW_LIMIT),
         ),
     )
 
@@ -119,7 +122,8 @@ class Dex1HandCenterCommandsCfg(SphericalPostureWholeBodyCommandsCfg):
         resampling_time_range=(2.0, 4.0),
         debug_vis=True,
         make_quat_unique=True,
-        orientation_yaw_offset=0.0,
+        orientation_mode="local_delta",
+        orientation_yaw_offset=-0.5 * math.pi,
         ranges=mdp.SphericalLevelPoseCommandCfg.Ranges(
             l=(0.30, 0.48),
             pitch=(-0.5 * math.pi, 0.0),
@@ -132,9 +136,9 @@ class Dex1HandCenterCommandsCfg(SphericalPostureWholeBodyCommandsCfg):
             l=(0.22, 0.68),
             pitch=(-0.5 * math.pi, 0.0),
             azimuth=(-0.5 * math.pi, 0.0),
-            roll=(-math.pi, math.pi),
-            ee_pitch=(-0.40, 0.40),
-            yaw=(-0.40, 0.40),
+            roll=(-WRIST_LOCAL_ROLL_LIMIT, WRIST_LOCAL_ROLL_LIMIT),
+            ee_pitch=(-WRIST_LOCAL_PITCH_YAW_LIMIT, WRIST_LOCAL_PITCH_YAW_LIMIT),
+            yaw=(-WRIST_LOCAL_PITCH_YAW_LIMIT, WRIST_LOCAL_PITCH_YAW_LIMIT),
         ),
     )
 
@@ -190,6 +194,24 @@ class Dex1HandCenterObservationsCfg(SphericalPostureWholeBodyObservationsCfg):
             },
             clip=(-1.0, 1.0),
         )
+        left_wrist_orientation_error = ObsTerm(
+            func=mdp.frame_transformer_pose_command_orientation_error_w_in_root_frame,
+            params={
+                "command_name": "left_wrist_pose",
+                "frame_sensor_name": HAND_CENTER_FRAME_NAME,
+                "frame_index": 0,
+            },
+            clip=(-math.pi, math.pi),
+        )
+        right_wrist_orientation_error = ObsTerm(
+            func=mdp.frame_transformer_pose_command_orientation_error_w_in_root_frame,
+            params={
+                "command_name": "right_wrist_pose",
+                "frame_sensor_name": HAND_CENTER_FRAME_NAME,
+                "frame_index": 1,
+            },
+            clip=(-math.pi, math.pi),
+        )
 
     policy: PolicyCfg = PolicyCfg()
 
@@ -237,6 +259,24 @@ class Dex1HandCenterObservationsCfg(SphericalPostureWholeBodyObservationsCfg):
                 "frame_index": 1,
             },
             clip=(-1.0, 1.0),
+        )
+        left_wrist_orientation_error = ObsTerm(
+            func=mdp.frame_transformer_pose_command_orientation_error_w_in_root_frame,
+            params={
+                "command_name": "left_wrist_pose",
+                "frame_sensor_name": HAND_CENTER_FRAME_NAME,
+                "frame_index": 0,
+            },
+            clip=(-math.pi, math.pi),
+        )
+        right_wrist_orientation_error = ObsTerm(
+            func=mdp.frame_transformer_pose_command_orientation_error_w_in_root_frame,
+            params={
+                "command_name": "right_wrist_pose",
+                "frame_sensor_name": HAND_CENTER_FRAME_NAME,
+                "frame_index": 1,
+            },
+            clip=(-math.pi, math.pi),
         )
 
     critic: CriticCfg = CriticCfg()

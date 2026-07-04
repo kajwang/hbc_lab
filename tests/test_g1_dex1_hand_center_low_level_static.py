@@ -59,11 +59,13 @@ def test_dex1_hand_center_task_tracks_frame_transformer_pose_with_wide_roll_and_
     assert "tracked_frame_index=0" in source
     assert "tracked_frame_index=1" in source
     assert source.count("roll=(-0.50, 0.50)") == 2
-    assert source.count("roll=(-math.pi, math.pi)") == 2
+    assert "WRIST_LOCAL_ROLL_LIMIT = 1.70" in source
+    assert source.count("roll=(-WRIST_LOCAL_ROLL_LIMIT, WRIST_LOCAL_ROLL_LIMIT)") == 2
     assert source.count("ee_pitch=(-0.12, 0.12)") == 2
-    assert source.count("ee_pitch=(-0.40, 0.40)") == 2
+    assert "WRIST_LOCAL_PITCH_YAW_LIMIT = 1.00" in source
+    assert source.count("ee_pitch=(-WRIST_LOCAL_PITCH_YAW_LIMIT, WRIST_LOCAL_PITCH_YAW_LIMIT)") == 2
     assert source.count("yaw=(-0.12, 0.12)") == 2
-    assert source.count("yaw=(-0.40, 0.40)") == 2
+    assert source.count("yaw=(-WRIST_LOCAL_PITCH_YAW_LIMIT, WRIST_LOCAL_PITCH_YAW_LIMIT)") == 2
     assert "func=mdp.frame_transformer_pose_command_position_error_w_in_root_frame" in source
     assert "func=mdp.frame_pose_command_position_error_w_exp" in source
     assert "func=mdp.frame_pose_command_position_error_w_tanh" in source
@@ -71,8 +73,10 @@ def test_dex1_hand_center_task_tracks_frame_transformer_pose_with_wide_roll_and_
     assert '"frame_sensor_name": HAND_CENTER_FRAME_NAME' in source
     assert "def frame_transformer_pose_in_root_frame" in observation_source
     assert "def frame_transformer_pose_command_position_error_w_in_root_frame" in observation_source
+    assert "def frame_transformer_pose_command_orientation_error_w_in_root_frame" in observation_source
     assert "def frame_pose_command_position_error_w_exp" in reward_source
     assert "def frame_pose_command_orientation_error_w_tanh" in reward_source
+    assert 'orientation_mode: str = "azimuth"' in command_source
     assert "tracked_frame_sensor_name: str | None = None" in command_source
     assert "target_pos_w[:, self.cfg.tracked_frame_index]" in command_source
     assert source.count("weight=0.50") == 2
@@ -84,19 +88,25 @@ def test_dex1_hand_center_current_pose_observations_use_hand_center_frame():
     assert "left_wrist_pose_current = ObsTerm" in source
     assert "right_wrist_pose_current = ObsTerm" in source
     assert source.count("func=mdp.frame_transformer_pose_in_root_frame") == 4
-    assert source.count('"frame_sensor_name": HAND_CENTER_FRAME_NAME') >= 12
-    assert source.count('"frame_index": 0') >= 6
-    assert source.count('"frame_index": 1') >= 6
+    assert "left_wrist_orientation_error = ObsTerm" in source
+    assert "right_wrist_orientation_error = ObsTerm" in source
+    assert source.count("func=mdp.frame_transformer_pose_command_orientation_error_w_in_root_frame") == 4
+    assert source.count('"frame_sensor_name": HAND_CENTER_FRAME_NAME') >= 16
+    assert source.count('"frame_index": 0') >= 8
+    assert source.count('"frame_index": 1') >= 8
 
 
-def test_dex1_hand_center_left_orientation_target_has_hand_base_yaw_offset():
+def test_dex1_hand_center_orientation_target_uses_wrist_local_delta_sampling():
     source = _read(G1_ROOT / "whole_body_spherical_posture_dex1_hand_center_env_cfg.py")
     command_source = _read(MDP_ROOT / "commands/spherical_pose_command.py")
 
+    assert 'orientation_mode="local_delta"' in source
+    assert 'if self.cfg.orientation_mode == "local_delta":' in command_source
+    assert "nominal_quat = quat_from_euler_xyz" in command_source
+    assert "quat = quat_mul(nominal_quat, delta_quat)" in command_source
     assert "orientation_yaw_offset: float = 0.0" in command_source
     assert "self.cfg.orientation_yaw_offset" in command_source
-    assert "orientation_yaw_offset=-0.5 * math.pi" in source
-    assert "orientation_yaw_offset=0.0" in source
+    assert source.count("orientation_yaw_offset=-0.5 * math.pi") == 2
 
 
 def test_dex1_hand_center_task_disables_terrain_level_curriculum_but_keeps_other_curricula():
