@@ -548,6 +548,14 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self.extras["log"]["Contact/active_opposition_mean"] = self.active_opposition.mean()
         self.extras["log"]["Contact/active_pinch_score_mean"] = self.active_pinch_score.mean()
         self.extras["log"]["Contact/active_force_cos_sim_mean"] = self.active_contact_cos_sim.mean()
+        for attr_name, log_name in (
+            ("_approach_only_near_broad", "ApproachOnly/near_broad_mean"),
+            ("_approach_only_near_mid", "ApproachOnly/near_mid_mean"),
+            ("_approach_only_near_fine", "ApproachOnly/near_fine_mean"),
+            ("_approach_only_active_grip_penalty", "ApproachOnly/active_grip_penalty_mean"),
+        ):
+            if hasattr(self, attr_name):
+                self.extras["log"][log_name] = getattr(self, attr_name).mean()
         self._log_link_contact_diagnostics()
         self.extras["log"]["HL/left_grip_mean"] = self.command_state.left_grip.mean()
         self.extras["log"]["HL/right_grip_mean"] = self.command_state.right_grip.mean()

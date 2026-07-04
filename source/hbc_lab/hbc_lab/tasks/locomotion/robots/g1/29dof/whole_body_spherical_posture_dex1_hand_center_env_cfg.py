@@ -90,6 +90,7 @@ class Dex1HandCenterCommandsCfg(SphericalPostureWholeBodyCommandsCfg):
         resampling_time_range=(2.0, 4.0),
         debug_vis=True,
         make_quat_unique=True,
+        orientation_yaw_offset=-0.5 * math.pi,
         ranges=mdp.SphericalLevelPoseCommandCfg.Ranges(
             l=(0.30, 0.48),
             pitch=(-0.5 * math.pi, 0.0),
@@ -118,6 +119,7 @@ class Dex1HandCenterCommandsCfg(SphericalPostureWholeBodyCommandsCfg):
         resampling_time_range=(2.0, 4.0),
         debug_vis=True,
         make_quat_unique=True,
+        orientation_yaw_offset=0.0,
         ranges=mdp.SphericalLevelPoseCommandCfg.Ranges(
             l=(0.30, 0.48),
             pitch=(-0.5 * math.pi, 0.0),
@@ -154,6 +156,22 @@ class Dex1HandCenterObservationsCfg(SphericalPostureWholeBodyObservationsCfg):
             scale=0.05,
             noise=velocity_env_cfg.Unoise(n_min=-1.5, n_max=1.5),
         )
+        left_wrist_pose_current = ObsTerm(
+            func=mdp.frame_transformer_pose_in_root_frame,
+            params={
+                "frame_sensor_name": HAND_CENTER_FRAME_NAME,
+                "frame_index": 0,
+            },
+            clip=(-2.0, 2.0),
+        )
+        right_wrist_pose_current = ObsTerm(
+            func=mdp.frame_transformer_pose_in_root_frame,
+            params={
+                "frame_sensor_name": HAND_CENTER_FRAME_NAME,
+                "frame_index": 1,
+            },
+            clip=(-2.0, 2.0),
+        )
         left_wrist_pose_error = ObsTerm(
             func=mdp.frame_transformer_pose_command_position_error_w_in_root_frame,
             params={
@@ -185,6 +203,22 @@ class Dex1HandCenterObservationsCfg(SphericalPostureWholeBodyObservationsCfg):
             func=mdp.joint_vel_rel,
             params={"asset_cfg": SceneEntityCfg("robot", joint_names=G1_29DOF_BODY_JOINT_NAMES)},
             scale=0.05,
+        )
+        left_wrist_pose_current = ObsTerm(
+            func=mdp.frame_transformer_pose_in_root_frame,
+            params={
+                "frame_sensor_name": HAND_CENTER_FRAME_NAME,
+                "frame_index": 0,
+            },
+            clip=(-2.0, 2.0),
+        )
+        right_wrist_pose_current = ObsTerm(
+            func=mdp.frame_transformer_pose_in_root_frame,
+            params={
+                "frame_sensor_name": HAND_CENTER_FRAME_NAME,
+                "frame_index": 1,
+            },
+            clip=(-2.0, 2.0),
         )
         left_wrist_pose_error = ObsTerm(
             func=mdp.frame_transformer_pose_command_position_error_w_in_root_frame,

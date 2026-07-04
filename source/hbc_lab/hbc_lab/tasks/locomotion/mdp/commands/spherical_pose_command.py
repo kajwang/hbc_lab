@@ -142,7 +142,7 @@ class SphericalPoseCommand(CommandTerm):
         quat = quat_from_euler_xyz(
             euler_angles[:, 0],
             euler_angles[:, 1],
-            euler_angles[:, 2] + self.spherical_command[env_ids, 2],
+            euler_angles[:, 2] + self.spherical_command[env_ids, 2] + self.cfg.orientation_yaw_offset,
         )
         self.pose_command_b[env_ids, 3:] = quat_unique(quat) if self.cfg.make_quat_unique else quat
         self._update_pose_command_w()
@@ -188,6 +188,7 @@ class SphericalLevelPoseCommandCfg(CommandTermCfg):
     anchor_pitch_command_index: int = 1
     anchor_pitch_scale: float = 1.0
     anchor_pitch_offset: float = 0.0
+    orientation_yaw_offset: float = 0.0
     fixed_anchor_height: float | None = None
     make_quat_unique: bool = False
 

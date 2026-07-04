@@ -8,48 +8,30 @@ from isaaclab.utils import configclass
 from hbc_lab.tasks.locomotion import mdp
 
 
-INNER_PAD_CONTACT_GATE_SCALE = 0.05
-
-
 def approach_reward(env) -> torch.Tensor:
     return torch.exp(-env.d_active_hand / 0.5)
 
 
-def active_inner_pad_contact(env) -> torch.Tensor:
-    if not hasattr(env, "_step_link_contact"):
-        return torch.zeros_like(env.d_active_hand)
-
-    left_active = env.active_hand == 0
-    left_link1_3 = env._step_link_contact["left_Link1_3"]
-    left_link2_3 = env._step_link_contact["left_Link2_3"]
-    right_link1_3 = env._step_link_contact["right_Link1_3"]
-    right_link2_3 = env._step_link_contact["right_Link2_3"]
-    active_link1_3 = torch.where(left_active, left_link1_3, right_link1_3)
-    active_link2_3 = torch.where(left_active, left_link2_3, right_link2_3)
-    return torch.maximum(active_link1_3, active_link2_3)
+def hand_center_approach_terms(env) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    d = env.d_active_hand
+    near_broad = torch.exp(-d / 0.45)
+    near_mid = 1.0 - torch.tanh(d / 0.20)
+    near_fine = 1.0 - torch.tanh(d / 0.06)
+    active_grip_penalty = env.active_grip
+    return near_broad, near_mid, near_fine, active_grip_penalty
 
 
 def couple_reward(env) -> torch.Tensor:
-    near = 1.0 - torch.tanh(env.d_active_hand / 0.35)
-    grasp_window = 1.0 - torch.tanh(env.d_active_hand / 0.1)
-    inner_pad_contact = active_inner_pad_contact(env)
-    pad_gate = torch.clamp(inner_pad_contact / INNER_PAD_CONTACT_GATE_SCALE, min=0.0, max=1.0)
-    close_gate = torch.maximum(grasp_window, pad_gate)
-    gripper_close = env.active_grip
-    gated_gripper_close1 = gripper_close * pad_gate
-    early_close_penalty1 = gripper_close * (1.0 - pad_gate)
-    gated_gripper_close2 = gripper_close * grasp_window
-    early_close_penalty2 = gripper_close * (1.0 - grasp_window)
+    near_broad, near_mid, near_fine, active_grip_penalty = hand_center_approach_terms(env)
+    env._approach_only_near_broad = near_broad.detach()
+    env._approach_only_near_mid = near_mid.detach()
+    env._approach_only_near_fine = near_fine.detach()
+    env._approach_only_active_grip_penalty = active_grip_penalty.detach()
     return (
-        1.5 * near
-        + 0.50 * pad_gate
-        # Baseline A: require force-direction pinch in the couple reward.
-        # + 0.20 * env.c_pinch
-        + 0.20 * env.c_grasp
-        + 0.50 * gated_gripper_close1
-        - 0.50 * early_close_penalty1
-        + 0.50 * gated_gripper_close2
-        - 0.50 * early_close_penalty2
+        0.50 * near_broad
+        + 1.00 * near_mid
+        + 1.50 * near_fine
+        - 0.40 * active_grip_penalty
     )
 
 

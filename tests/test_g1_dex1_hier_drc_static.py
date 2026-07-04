@@ -52,12 +52,12 @@ def test_g1_dex1_gripper_uses_limit_endpoints_for_open_and_close_direction():
     gripper_source = _read(MDP_ROOT / "gripper.py")
 
     assert '".*_hand_Joint[12]_1": 0.047' not in unitree_source
-    assert '".*_hand_Joint[12]_1": 0.0' in unitree_source
+    assert '".*_hand_Joint[12]_1": -0.02' in unitree_source
     assert "DEX1_OPEN_POSITION = -0.02" in gripper_source
     assert "DEX1_CLOSE_POSITION = 0.024" in gripper_source
     assert "enabled_self_collisions=False" in unitree_source
     assert "stiffness=800.0" in unitree_source
-    assert "friction=200.0" in unitree_source
+    assert "friction=0.0" in unitree_source
 
 
 def test_g1_dex1_task_is_registered_separately_from_dex3():
@@ -85,7 +85,7 @@ def test_g1_dex1_hier_env_reuses_current_low_level_policy_interface():
     assert "HL/right_gripper_target_buffer_mean" in env_source
 
 
-def test_g1_dex1_uses_go2_style_two_finger_contact_progress_and_rewards():
+def test_g1_dex1_approach_only_reward_removes_close_and_contact_gates():
     progress_source = _read(MDP_ROOT / "contact_progress.py")
     reward_source = _read(MDP_ROOT / "rewards.py")
     scenes_source = _read(MDP_ROOT / "scenes.py")
@@ -95,13 +95,20 @@ def test_g1_dex1_uses_go2_style_two_finger_contact_progress_and_rewards():
     assert "contact = torch.minimum(left_contact, right_contact)" in progress_source
     assert "pinch = contact * pinch_score" in progress_source
     assert "grasp = contact * grip * close_allowed_gate" in progress_source
-    assert "def active_inner_pad_contact" in reward_source
-    assert "0.35 * pad_gate" in reward_source
-    assert "# + 0.20 * env.c_pinch" in reward_source
-    assert "+ 0.20 * env.c_grasp" in reward_source
+    assert "def hand_center_approach_terms" in reward_source
+    assert "near_broad = torch.exp(-d / 0.45)" in reward_source
+    assert "near_mid = 1.0 - torch.tanh(d / 0.20)" in reward_source
+    assert "near_fine = 1.0 - torch.tanh(d / 0.06)" in reward_source
+    assert "active_grip_penalty = env.active_grip" in reward_source
+    assert "- 0.40 * active_grip_penalty" in reward_source
+    assert "ApproachOnly/near_broad_mean" in env_source
+    assert "ApproachOnly/near_mid_mean" in env_source
+    assert "ApproachOnly/near_fine_mean" in env_source
+    assert "ApproachOnly/active_grip_penalty_mean" in env_source
+    assert "pad_gate" not in reward_source
+    assert "gated_gripper_close" not in reward_source
     assert "# self.c_couple = update_ema(self.c_couple, progress.pinch, alpha=0.2)" in env_source
     assert "self.c_couple = update_ema(self.c_couple, progress.grasp, alpha=0.2)" in env_source
-    assert "early_close_penalty" in reward_source
     assert "left_gripper_finger_contact" in scenes_source
     assert "right_gripper_finger_contact" in scenes_source
     assert "left_hand_base_link" in scenes_source

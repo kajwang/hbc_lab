@@ -75,7 +75,28 @@ def test_dex1_hand_center_task_tracks_frame_transformer_pose_with_wide_roll_and_
     assert "def frame_pose_command_orientation_error_w_tanh" in reward_source
     assert "tracked_frame_sensor_name: str | None = None" in command_source
     assert "target_pos_w[:, self.cfg.tracked_frame_index]" in command_source
-    assert source.count("weight=0.30") == 2
+    assert source.count("weight=0.50") == 2
+
+
+def test_dex1_hand_center_current_pose_observations_use_hand_center_frame():
+    source = _read(G1_ROOT / "whole_body_spherical_posture_dex1_hand_center_env_cfg.py")
+
+    assert "left_wrist_pose_current = ObsTerm" in source
+    assert "right_wrist_pose_current = ObsTerm" in source
+    assert source.count("func=mdp.frame_transformer_pose_in_root_frame") == 4
+    assert source.count('"frame_sensor_name": HAND_CENTER_FRAME_NAME') >= 12
+    assert source.count('"frame_index": 0') >= 6
+    assert source.count('"frame_index": 1') >= 6
+
+
+def test_dex1_hand_center_left_orientation_target_has_hand_base_yaw_offset():
+    source = _read(G1_ROOT / "whole_body_spherical_posture_dex1_hand_center_env_cfg.py")
+    command_source = _read(MDP_ROOT / "commands/spherical_pose_command.py")
+
+    assert "orientation_yaw_offset: float = 0.0" in command_source
+    assert "self.cfg.orientation_yaw_offset" in command_source
+    assert "orientation_yaw_offset=-0.5 * math.pi" in source
+    assert "orientation_yaw_offset=0.0" in source
 
 
 def test_dex1_hand_center_task_disables_terrain_level_curriculum_but_keeps_other_curricula():
