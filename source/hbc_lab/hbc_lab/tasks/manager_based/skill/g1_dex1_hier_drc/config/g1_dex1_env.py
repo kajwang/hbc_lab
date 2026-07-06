@@ -88,8 +88,6 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         super().__init__(cfg, render_mode, **kwargs)
 
         robot = self.scene["robot"]
-        self.left_wrist_body_id = robot.find_bodies("left_wrist_yaw_link")[0][0]
-        self.right_wrist_body_id = robot.find_bodies("right_wrist_yaw_link")[0][0]
         self.high_level_command = self.command_manager.get_term("high_level")
         self.active_hand = self.high_level_command.active_hand.clone()
         self.command_state = HighLevelCommandState(
@@ -253,7 +251,7 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self.command_state.left_grip[:] = self.cfg.debug_fixed_left_grip
         self.command_state.right_grip[:] = self.cfg.debug_fixed_right_grip
 
-    def _active_wrist_pose_and_limits(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def _active_hand_center_pose_and_limits(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         left_active = (self.active_hand == 0).unsqueeze(-1)
         pose = torch.where(left_active, self.command_state.left_wrist_pose_b, self.command_state.right_wrist_pose_b)
         left_lower = torch.tensor(self.action_limits.left_workspace_min, device=self.device, dtype=pose.dtype)
@@ -272,8 +270,7 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         fall_threshold = self.scene.env_origins[:, 2] + 0.5 * OBJECT_PLATFORM_HEIGHT
         return object_root_z < fall_threshold
 
-    def _active_target_tracking_diagnostics(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        robot = self.scene["robot"]
+    def _active_target_tracking_diagnostics(self) -> tuple[torch.Tensor, torch.Tensor]:
         left_active = (self.active_hand == 0).unsqueeze(-1)
         left_target_w = self.low_level_obs_builder._target_pos_w(
             self.command_state.left_wrist_pose_b,
@@ -287,45 +284,51 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         )
         active_target_w = torch.where(left_active, left_target_w, right_target_w)
 
-        left_wrist_pos_w = robot.data.body_pos_w[:, self.left_wrist_body_id]
-        right_wrist_pos_w = robot.data.body_pos_w[:, self.right_wrist_body_id]
-        active_wrist_pos_w = torch.where(left_active, left_wrist_pos_w, right_wrist_pos_w)
-
         hand_center_pos_w = self.scene[HAND_CENTER_FRAME_NAME].data.target_pos_w
         active_hand_center_w = torch.where(left_active, hand_center_pos_w[:, 0, :], hand_center_pos_w[:, 1, :])
         target_object_dist = torch.norm(active_target_w - self._object_frame_pos_w(), dim=-1)
-        wrist_tracking_error = torch.norm(active_wrist_pos_w - active_target_w, dim=-1)
-        hand_center_to_target_dist = torch.norm(active_hand_center_w - active_target_w, dim=-1)
-        return target_object_dist, wrist_tracking_error, hand_center_to_target_dist
+        hand_center_tracking_error = torch.norm(active_hand_center_w - active_target_w, dim=-1)
+        return target_object_dist, hand_center_tracking_error
 
     def _log_high_level_diagnostics(self):
         robot = self.scene["robot"]
-        active_wrist_pose_b, lower, upper = self._active_wrist_pose_and_limits()
-        active_wrist_pos_b = active_wrist_pose_b[:, :3]
+        active_hand_center_pose_b, lower, upper = self._active_hand_center_pose_and_limits()
+        active_hand_center_pos_b = active_hand_center_pose_b[:, :3]
         left_active = self.active_hand == 0
         left_grip = self.command_state.left_grip.squeeze(-1)
         right_grip = self.command_state.right_grip.squeeze(-1)
         active_grip = torch.where(left_active, left_grip, right_grip)
         inactive_grip = torch.where(left_active, right_grip, left_grip)
-        target_object_dist, wrist_tracking_error, hand_center_to_target_dist = self._active_target_tracking_diagnostics()
+        target_object_dist, hand_center_tracking_error = self._active_target_tracking_diagnostics()
         eps = 1.0e-4
         self.extras["log"]["HL/root_height_cmd_mean"] = self.command_state.posture_command[:, 0].mean()
         self.extras["log"]["HL/torso_pitch_cmd_mean"] = self.command_state.posture_command[:, 1].mean()
-        self.extras["log"]["HL/active_wrist_cmd_x_mean"] = active_wrist_pos_b[:, 0].mean()
-        self.extras["log"]["HL/active_wrist_cmd_y_mean"] = active_wrist_pos_b[:, 1].mean()
-        self.extras["log"]["HL/active_wrist_cmd_z_mean"] = active_wrist_pos_b[:, 2].mean()
+        self.extras["log"]["HL/active_hand_center_cmd_x_mean"] = active_hand_center_pos_b[:, 0].mean()
+        self.extras["log"]["HL/active_hand_center_cmd_y_mean"] = active_hand_center_pos_b[:, 1].mean()
+        self.extras["log"]["HL/active_hand_center_cmd_z_mean"] = active_hand_center_pos_b[:, 2].mean()
         self.extras["log"]["HL/active_grip_mean"] = active_grip.mean()
         self.extras["log"]["HL/inactive_grip_mean"] = inactive_grip.mean()
         self.extras["log"]["HL/active_grip_closed_ratio"] = (active_grip > 0.5).float().mean()
-        self.extras["log"]["HL/active_wrist_target_object_dist"] = target_object_dist.mean()
-        self.extras["log"]["HL/active_wrist_tracking_error"] = wrist_tracking_error.mean()
-        self.extras["log"]["HL/active_hand_center_to_wrist_target_dist"] = hand_center_to_target_dist.mean()
-        self.extras["log"]["HL/active_wrist_cmd_x_min_ratio"] = (active_wrist_pos_b[:, 0] <= lower[:, 0] + eps).float().mean()
-        self.extras["log"]["HL/active_wrist_cmd_x_max_ratio"] = (active_wrist_pos_b[:, 0] >= upper[:, 0] - eps).float().mean()
-        self.extras["log"]["HL/active_wrist_cmd_y_min_ratio"] = (active_wrist_pos_b[:, 1] <= lower[:, 1] + eps).float().mean()
-        self.extras["log"]["HL/active_wrist_cmd_y_max_ratio"] = (active_wrist_pos_b[:, 1] >= upper[:, 1] - eps).float().mean()
-        self.extras["log"]["HL/active_wrist_cmd_z_min_ratio"] = (active_wrist_pos_b[:, 2] <= lower[:, 2] + eps).float().mean()
-        self.extras["log"]["HL/active_wrist_cmd_z_max_ratio"] = (active_wrist_pos_b[:, 2] >= upper[:, 2] - eps).float().mean()
+        self.extras["log"]["HL/active_hand_center_target_object_dist"] = target_object_dist.mean()
+        self.extras["log"]["HL/active_hand_center_tracking_error"] = hand_center_tracking_error.mean()
+        self.extras["log"]["HL/active_hand_center_cmd_x_min_ratio"] = (
+            active_hand_center_pos_b[:, 0] <= lower[:, 0] + eps
+        ).float().mean()
+        self.extras["log"]["HL/active_hand_center_cmd_x_max_ratio"] = (
+            active_hand_center_pos_b[:, 0] >= upper[:, 0] - eps
+        ).float().mean()
+        self.extras["log"]["HL/active_hand_center_cmd_y_min_ratio"] = (
+            active_hand_center_pos_b[:, 1] <= lower[:, 1] + eps
+        ).float().mean()
+        self.extras["log"]["HL/active_hand_center_cmd_y_max_ratio"] = (
+            active_hand_center_pos_b[:, 1] >= upper[:, 1] - eps
+        ).float().mean()
+        self.extras["log"]["HL/active_hand_center_cmd_z_min_ratio"] = (
+            active_hand_center_pos_b[:, 2] <= lower[:, 2] + eps
+        ).float().mean()
+        self.extras["log"]["HL/active_hand_center_cmd_z_max_ratio"] = (
+            active_hand_center_pos_b[:, 2] >= upper[:, 2] - eps
+        ).float().mean()
         if self.gripper_controller.last_left_target is not None and self.gripper_controller.last_right_target is not None:
             left_ids = self.gripper_controller.left_joint_ids
             right_ids = self.gripper_controller.right_joint_ids
@@ -549,10 +552,10 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self.extras["log"]["Contact/active_pinch_score_mean"] = self.active_pinch_score.mean()
         self.extras["log"]["Contact/active_force_cos_sim_mean"] = self.active_contact_cos_sim.mean()
         for attr_name, log_name in (
-            ("_approach_only_near_broad", "ApproachOnly/near_broad_mean"),
-            ("_approach_only_near_mid", "ApproachOnly/near_mid_mean"),
-            ("_approach_only_near_fine", "ApproachOnly/near_fine_mean"),
-            ("_approach_only_active_grip_penalty", "ApproachOnly/active_grip_penalty_mean"),
+            ("_couple_grasp_window", "Couple/grasp_window_mean"),
+            ("_couple_pad_gate", "Couple/pad_gate_mean"),
+            ("_couple_gated_gripper_close", "Couple/gated_gripper_close_mean"),
+            ("_couple_early_close_penalty", "Couple/early_close_penalty_mean"),
         ):
             if hasattr(self, attr_name):
                 self.extras["log"][log_name] = getattr(self, attr_name).mean()

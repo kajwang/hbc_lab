@@ -220,19 +220,19 @@ class G1Dex1HierCommandCfg(CommandTermCfg):
         0.25,
         0.15,
         -0.25,
-        0.955177693375944,
+        0.7071067811865476,
         0.0,
         0.0,
-        0.296033062472777,
+        -0.7071067811865475,
     )
     default_right_wrist_pose_b: tuple[float, float, float, float, float, float, float] = (
         0.25,
         -0.15,
         -0.25,
-        0.955177693375944,
+        0.7071067811865476,
         0.0,
         0.0,
-        -0.296033062472777,
+        -0.7071067811865475,
     )
     base_velocity_visualizer_cfg: VisualizationMarkersCfg = GREEN_ARROW_X_MARKER_CFG.replace(
         prim_path="/Visuals/G1Dex1HierCommand/base_velocity"

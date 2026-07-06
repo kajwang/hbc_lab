@@ -76,7 +76,7 @@ def _decode_wrist(
     pose = previous_pose.clone()
     pose[:, :3] = pose[:, :3] + raw_action[:, start : start + 3] * limits.wrist_delta_scale
     delta_quat = _quat_from_rotvec(raw_action[:, start + 3 : start + 6] * limits.wrist_rot_delta_scale)
-    pose[:, 3:] = _normalize_quat(_quat_mul(delta_quat, pose[:, 3:]))
+    pose[:, 3:] = _normalize_quat(_quat_mul(pose[:, 3:], delta_quat))
     grip = (raw_action[:, start + 6 : start + 7] + 1.0) * 0.5
     return pose, grip.clamp(0.0, 1.0)
 

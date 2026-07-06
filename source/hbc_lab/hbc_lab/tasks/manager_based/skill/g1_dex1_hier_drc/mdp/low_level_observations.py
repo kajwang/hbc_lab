@@ -7,6 +7,7 @@ from isaaclab.utils import math as math_utils
 from hbc_lab.assets.robots.unitree import G1_29DOF_BODY_JOINT_NAMES
 
 from .high_level_actions import HighLevelCommandState
+from .scenes import HAND_CENTER_FRAME_NAME
 
 
 class G1SphericalPostureLowLevelObsBuilder:
@@ -27,8 +28,6 @@ class G1SphericalPostureLowLevelObsBuilder:
         self.device = env.device
         self.joint_names = G1_29DOF_BODY_JOINT_NAMES
         self.joint_ids: list[int] | None = None
-        self.left_wrist_body_id: int | None = None
-        self.right_wrist_body_id: int | None = None
         self.left_anchor_body_id: int | None = None
         self.right_anchor_body_id: int | None = None
         self.torso_body_id: int | None = None
@@ -50,27 +49,24 @@ class G1SphericalPostureLowLevelObsBuilder:
             if len(joint_ids) != len(self.joint_names):
                 raise RuntimeError(f"Expected {len(self.joint_names)} low-level joints, got {len(joint_ids)}: {joint_names}")
             self.joint_ids = list(joint_ids)
-            self.left_wrist_body_id = robot.find_bodies("left_wrist_yaw_link")[0][0]
-            self.right_wrist_body_id = robot.find_bodies("right_wrist_yaw_link")[0][0]
             self.left_anchor_body_id = robot.find_bodies("left_shoulder_pitch_link")[0][0]
             self.right_anchor_body_id = robot.find_bodies("right_shoulder_pitch_link")[0][0]
             self.torso_body_id = robot.find_bodies("torso_link")[0][0]
         return (
             self.joint_ids,
-            self.left_wrist_body_id,
-            self.right_wrist_body_id,
             self.left_anchor_body_id,
             self.right_anchor_body_id,
             self.torso_body_id,
         )
 
-    def _body_pose_in_root_frame(self, body_id: int) -> torch.Tensor:
+    def _frame_pose_in_root_frame(self, frame_index: int) -> torch.Tensor:
         robot: Articulation = self.env.scene["robot"]
+        frame_sensor = self.env.scene[HAND_CENTER_FRAME_NAME]
         pos_b, quat_b = math_utils.subtract_frame_transforms(
             robot.data.root_pos_w,
             robot.data.root_quat_w,
-            robot.data.body_pos_w[:, body_id],
-            robot.data.body_quat_w[:, body_id],
+            frame_sensor.data.target_pos_w[:, frame_index],
+            frame_sensor.data.target_quat_w[:, frame_index],
         )
         return torch.cat((pos_b, quat_b), dim=-1)
 
@@ -90,7 +86,7 @@ class G1SphericalPostureLowLevelObsBuilder:
 
     def _anchor_pose_w(self, side: str, posture_command: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         robot: Articulation = self.env.scene["robot"]
-        _, _, _, left_anchor_id, right_anchor_id, _ = self._resolve_ids()
+        _, left_anchor_id, right_anchor_id, _ = self._resolve_ids()
         anchor_id = left_anchor_id if side == "left" else right_anchor_id
         assert anchor_id is not None
 
@@ -110,13 +106,32 @@ class G1SphericalPostureLowLevelObsBuilder:
         anchor_pos_w = root_cmd_pos_w + math_utils.quat_apply(anchor_quat_w, anchor_offset_b)
         return anchor_pos_w, anchor_quat_w
 
-    def _target_pos_w(self, pose_b: torch.Tensor, side: str, posture_command: torch.Tensor) -> torch.Tensor:
-        target_pos_w, _ = math_utils.combine_frame_transforms(
+    def _target_pose_w(
+        self,
+        pose_b: torch.Tensor,
+        side: str,
+        posture_command: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        return math_utils.combine_frame_transforms(
             *self._anchor_pose_w(side, posture_command),
             pose_b[:, :3],
             pose_b[:, 3:],
         )
+
+    def _target_pos_w(self, pose_b: torch.Tensor, side: str, posture_command: torch.Tensor) -> torch.Tensor:
+        target_pos_w, _ = self._target_pose_w(pose_b, side, posture_command)
         return target_pos_w
+
+    def _orientation_error_b(
+        self,
+        current_pos_w: torch.Tensor,
+        current_quat_w: torch.Tensor,
+        target_pos_w: torch.Tensor,
+        target_quat_w: torch.Tensor,
+    ) -> torch.Tensor:
+        robot: Articulation = self.env.scene["robot"]
+        _, rot_error_w = math_utils.compute_pose_error(current_pos_w, current_quat_w, target_pos_w, target_quat_w)
+        return math_utils.quat_apply_inverse(robot.data.root_quat_w, rot_error_w)
 
     def _single_frame_terms(
         self,
@@ -124,17 +139,25 @@ class G1SphericalPostureLowLevelObsBuilder:
         last_low_level_action: torch.Tensor,
     ) -> tuple[torch.Tensor, ...]:
         robot: Articulation = self.env.scene["robot"]
-        joint_ids, left_wrist_id, right_wrist_id, _, _, torso_body_id = self._resolve_ids()
-        assert left_wrist_id is not None and right_wrist_id is not None and torso_body_id is not None
+        joint_ids, _, _, torso_body_id = self._resolve_ids()
+        assert torso_body_id is not None
 
         joint_pos_rel = robot.data.joint_pos[:, joint_ids] - robot.data.default_joint_pos[:, joint_ids]
         joint_vel_rel = robot.data.joint_vel[:, joint_ids]
-        left_current = self._body_pose_in_root_frame(left_wrist_id)
-        right_current = self._body_pose_in_root_frame(right_wrist_id)
+        left_current = self._frame_pose_in_root_frame(frame_index=0)
+        right_current = self._frame_pose_in_root_frame(frame_index=1)
         left_current = left_current.clip(-2.0, 2.0)
         right_current = right_current.clip(-2.0, 2.0)
-        left_target_w = self._target_pos_w(command_state.left_wrist_pose_b, "left", command_state.posture_command)
-        right_target_w = self._target_pos_w(command_state.right_wrist_pose_b, "right", command_state.posture_command)
+        left_target_w, left_target_quat_w = self._target_pose_w(
+            command_state.left_wrist_pose_b,
+            "left",
+            command_state.posture_command,
+        )
+        right_target_w, right_target_quat_w = self._target_pose_w(
+            command_state.right_wrist_pose_b,
+            "right",
+            command_state.posture_command,
+        )
         left_target_b, _ = math_utils.subtract_frame_transforms(
             robot.data.root_pos_w, robot.data.root_quat_w, left_target_w
         )
@@ -145,6 +168,19 @@ class G1SphericalPostureLowLevelObsBuilder:
         right_error = right_target_b - right_current[:, :3]
         left_error = left_error.clip(-1.0, 1.0)
         right_error = right_error.clip(-1.0, 1.0)
+        frame_sensor = self.env.scene[HAND_CENTER_FRAME_NAME]
+        left_orientation_error = self._orientation_error_b(
+            frame_sensor.data.target_pos_w[:, 0],
+            frame_sensor.data.target_quat_w[:, 0],
+            left_target_w,
+            left_target_quat_w,
+        ).clip(-torch.pi, torch.pi)
+        right_orientation_error = self._orientation_error_b(
+            frame_sensor.data.target_pos_w[:, 1],
+            frame_sensor.data.target_quat_w[:, 1],
+            right_target_w,
+            right_target_quat_w,
+        ).clip(-torch.pi, torch.pi)
         posture_error = self._posture_error(command_state, torso_body_id).clip(-1.0, 1.0)
 
         return (
@@ -163,6 +199,8 @@ class G1SphericalPostureLowLevelObsBuilder:
             right_error,
             command_state.posture_command,
             posture_error,
+            left_orientation_error,
+            right_orientation_error,
         )
 
     def _single_frame(self, command_state: HighLevelCommandState, last_low_level_action: torch.Tensor) -> torch.Tensor:

@@ -12,24 +12,30 @@ def _reward_source() -> str:
     return REWARD_PATH.read_text()
 
 
-def test_dex1_couple_reward_is_approach_only_without_contact_or_close_gates():
+def test_dex1_couple_reward_uses_grasp_window_and_inner_pad_contact_gates():
     reward_source = _reward_source()
 
-    assert "def hand_center_approach_terms" in reward_source
-    assert "near_broad = torch.exp(-d / 0.45)" in reward_source
-    assert "near_mid = 1.0 - torch.tanh(d / 0.20)" in reward_source
-    assert "near_fine = 1.0 - torch.tanh(d / 0.06)" in reward_source
-    assert "active_grip_penalty = env.active_grip" in reward_source
-    assert "pad_gate" not in reward_source
-    assert "gated_gripper_close" not in reward_source
-    assert "early_close_penalty" not in reward_source
+    assert "def active_inner_pad_contact" in reward_source
+    assert "left_link1_3 = env._step_link_contact[\"left_Link1_3\"]" in reward_source
+    assert "left_link2_3 = env._step_link_contact[\"left_Link2_3\"]" in reward_source
+    assert "near = 1.0 - torch.tanh(env.d_active_hand / 0.35)" in reward_source
+    assert "grasp_window = 1.0 - torch.tanh(env.d_active_hand / 0.1)" in reward_source
+    assert "pad_gate = torch.clamp(inner_pad_contact / INNER_PAD_CONTACT_GATE_SCALE, min=0.0, max=1.0)" in reward_source
+    assert "gated_gripper_close1 = gripper_close * pad_gate" in reward_source
+    assert "early_close_penalty1 = gripper_close * (1.0 - pad_gate)" in reward_source
+    assert "gated_gripper_close2 = gripper_close * grasp_window" in reward_source
+    assert "early_close_penalty2 = gripper_close * (1.0 - grasp_window)" in reward_source
 
 
-def test_dex1_couple_reward_prioritizes_hand_center_distance_and_penalizes_active_grip():
+def test_dex1_couple_reward_restores_pre_approach_only_weights():
     reward_source = _reward_source()
 
-    assert "0.50 * near_broad" in reward_source
-    assert "1.00 * near_mid" in reward_source
-    assert "1.50 * near_fine" in reward_source
-    assert "- 0.40 * active_grip_penalty" in reward_source
-    assert "+ 0.20 * env.c_grasp" not in reward_source
+    assert "1.5 * near" in reward_source
+    assert "+ 0.50 * pad_gate" in reward_source
+    assert "+ 0.20 * env.c_grasp" in reward_source
+    assert "+ 0.50 * gated_gripper_close1" in reward_source
+    assert "- 0.50 * early_close_penalty1" in reward_source
+    assert "+ 0.50 * gated_gripper_close2" in reward_source
+    assert "- 0.50 * early_close_penalty2" in reward_source
+    assert "hand_center_approach_terms" not in reward_source
+    assert "active_grip_penalty" not in reward_source

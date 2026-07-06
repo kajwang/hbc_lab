@@ -7,31 +7,54 @@ from isaaclab.utils import configclass
 
 from hbc_lab.tasks.locomotion import mdp
 
+from .scenes import HAND_CENTER_FRAME_NAME
+
+
+INNER_PAD_CONTACT_GATE_SCALE = 0.05
+
 
 def approach_reward(env) -> torch.Tensor:
     return torch.exp(-env.d_active_hand / 0.5)
 
 
-def hand_center_approach_terms(env) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    d = env.d_active_hand
-    near_broad = torch.exp(-d / 0.45)
-    near_mid = 1.0 - torch.tanh(d / 0.20)
-    near_fine = 1.0 - torch.tanh(d / 0.06)
-    active_grip_penalty = env.active_grip
-    return near_broad, near_mid, near_fine, active_grip_penalty
+def active_inner_pad_contact(env) -> torch.Tensor:
+    if not hasattr(env, "_step_link_contact"):
+        return torch.zeros_like(env.d_active_hand)
+
+    left_active = env.active_hand == 0
+    left_link1_3 = env._step_link_contact["left_Link1_3"]
+    left_link2_3 = env._step_link_contact["left_Link2_3"]
+    right_link1_3 = env._step_link_contact["right_Link1_3"]
+    right_link2_3 = env._step_link_contact["right_Link2_3"]
+    active_link1_3 = torch.where(left_active, left_link1_3, right_link1_3)
+    active_link2_3 = torch.where(left_active, left_link2_3, right_link2_3)
+    return torch.maximum(active_link1_3, active_link2_3)
 
 
 def couple_reward(env) -> torch.Tensor:
-    near_broad, near_mid, near_fine, active_grip_penalty = hand_center_approach_terms(env)
-    env._approach_only_near_broad = near_broad.detach()
-    env._approach_only_near_mid = near_mid.detach()
-    env._approach_only_near_fine = near_fine.detach()
-    env._approach_only_active_grip_penalty = active_grip_penalty.detach()
+    near = 1.0 - torch.tanh(env.d_active_hand / 0.35)
+    grasp_window = 1.0 - torch.tanh(env.d_active_hand / 0.1)
+    inner_pad_contact = active_inner_pad_contact(env)
+    pad_gate = torch.clamp(inner_pad_contact / INNER_PAD_CONTACT_GATE_SCALE, min=0.0, max=1.0)
+    gripper_close = env.active_grip
+    gated_gripper_close1 = gripper_close * pad_gate
+    early_close_penalty1 = gripper_close * (1.0 - pad_gate)
+    gated_gripper_close2 = gripper_close * grasp_window
+    early_close_penalty2 = gripper_close * (1.0 - grasp_window)
+    env._couple_grasp_window = grasp_window.detach()
+    env._couple_pad_gate = pad_gate.detach()
+    env._couple_gated_gripper_close = (gated_gripper_close1 + gated_gripper_close2).detach()
+    env._couple_early_close_penalty = (early_close_penalty1 + early_close_penalty2).detach()
     return (
-        0.50 * near_broad
-        + 1.00 * near_mid
-        + 1.50 * near_fine
-        - 0.40 * active_grip_penalty
+        1.5 * near
+        + 0.50 * pad_gate
+        # Baseline A: require force-direction pinch in the couple reward.
+        # + 0.20 * env.c_pinch
+        + 0.20 * env.c_grasp
+        + 0.50 * gated_gripper_close1
+        - 0.50 * early_close_penalty1
+        + 0.50 * gated_gripper_close2
+        - 0.50 * early_close_penalty2
     )
 
 
@@ -55,8 +78,7 @@ def command_smoothness(env) -> torch.Tensor:
     return torch.sum(torch.square(env.last_high_level_action - env.prev_high_level_action), dim=-1)
 
 
-def both_wrist_tracking_error_penalty(env) -> torch.Tensor:
-    robot = env.scene["robot"]
+def both_hand_center_tracking_error_penalty(env) -> torch.Tensor:
     left_target_w = env.low_level_obs_builder._target_pos_w(
         env.command_state.left_wrist_pose_b,
         "left",
@@ -67,11 +89,10 @@ def both_wrist_tracking_error_penalty(env) -> torch.Tensor:
         "right",
         env.command_state.posture_command,
     )
-    left_wrist_pos_w = robot.data.body_pos_w[:, env.left_wrist_body_id]
-    right_wrist_pos_w = robot.data.body_pos_w[:, env.right_wrist_body_id]
-    left_wrist_error = torch.norm(left_wrist_pos_w - left_target_w, dim=-1)
-    right_wrist_error = torch.norm(right_wrist_pos_w - right_target_w, dim=-1)
-    return left_wrist_error + right_wrist_error
+    hand_center_pos_w = env.scene[HAND_CENTER_FRAME_NAME].data.target_pos_w
+    left_hand_center_error = torch.norm(hand_center_pos_w[:, 0, :] - left_target_w, dim=-1)
+    right_hand_center_error = torch.norm(hand_center_pos_w[:, 1, :] - right_target_w, dim=-1)
+    return left_hand_center_error + right_hand_center_error
 
 
 def task_success_reward(env) -> torch.Tensor:
@@ -88,7 +109,7 @@ class G1Dex1HierDrcRewardsCfg:
     task_success = RewTerm(func=task_success_reward, weight=1.0)
     object_fall = RewTerm(func=object_fall_penalty, weight=-2.0)
     command_smoothness = RewTerm(func=command_smoothness, weight=-0.02)
-    both_wrist_tracking_error_penalty = RewTerm(func=both_wrist_tracking_error_penalty, weight=-2.0)
+    both_hand_center_tracking_error_penalty = RewTerm(func=both_hand_center_tracking_error_penalty, weight=-2.0)
     is_alive = RewTerm(func=mdp.is_alive, weight=1.0)
     is_terminated = RewTerm(func=mdp.is_terminated, weight=-200.0)
     lin_vel_z_l2 = RewTerm(func=mdp.lin_vel_z_l2, weight=-1.0)
