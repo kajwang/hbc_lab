@@ -79,6 +79,13 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self.object_initial_pos_w = torch.zeros(cfg.scene.num_envs, 3, device=cfg.sim.device)
         self.object_target_pos_w = torch.zeros(cfg.scene.num_envs, 3, device=cfg.sim.device)
         self.object_fallen = torch.zeros(cfg.scene.num_envs, dtype=torch.bool, device=cfg.sim.device)
+        self.object_mass = torch.full(
+            (cfg.scene.num_envs,),
+            cfg.object_mass_start_mass,
+            device=cfg.sim.device,
+        )
+        self.object_mass_w_manip_ema = torch.full((), cfg.object_mass_start_w, device=cfg.sim.device)
+        self.object_mass_curriculum_level = torch.full((), cfg.object_mass_start_w, device=cfg.sim.device)
         self.success_proximity_count = torch.zeros(cfg.scene.num_envs, dtype=torch.long, device=cfg.sim.device)
         self.task_succeeded = torch.zeros(cfg.scene.num_envs, dtype=torch.bool, device=cfg.sim.device)
         self.last_high_level_action = torch.zeros(cfg.scene.num_envs, cfg.action_dim, device=cfg.sim.device)
@@ -399,6 +406,18 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self.W_app = weights[:, 0]
         self.W_couple = weights[:, 1]
         self.W_manip = weights[:, 2]
+        self._update_object_mass_curriculum()
+
+    def _update_object_mass_curriculum(self) -> None:
+        if not getattr(self.cfg, "object_mass_curriculum_enabled", False):
+            return
+        alpha = self.cfg.object_mass_w_manip_ema_alpha
+        w_manip_mean = self.W_manip.detach().mean()
+        self.object_mass_w_manip_ema = (1.0 - alpha) * self.object_mass_w_manip_ema + alpha * w_manip_mean
+        self.object_mass_curriculum_level = torch.maximum(
+            self.object_mass_curriculum_level,
+            self.object_mass_w_manip_ema,
+        )
 
     def _check_success(self):
         success_condition = (self.c_couple > self.cfg.success_couple_threshold) & (self.d_goal < self.cfg.success_distance)
@@ -538,6 +557,8 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self.extras["log"]["DRC/c_pinch_mean"] = self.c_pinch.mean()
         self.extras["log"]["DRC/d_goal_mean"] = self.d_goal.mean()
         self.extras["log"]["DRC/object_fall_mean"] = self.object_fallen.float().mean()
+        self.extras["log"]["DRC/object_mass_curriculum_level"] = self.object_mass_curriculum_level
+        self.extras["log"]["DRC/object_mass_mean"] = self.object_mass.mean()
         self.extras["log"]["DRC/W_app_mean"] = self.W_app.mean()
         self.extras["log"]["DRC/W_couple_mean"] = self.W_couple.mean()
         self.extras["log"]["DRC/W_manip_mean"] = self.W_manip.mean()

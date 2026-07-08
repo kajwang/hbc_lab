@@ -67,6 +67,18 @@ class G1Dex1HierDrcEnvCfg(ManagerBasedRLEnvCfg):
     success_steps: int = 25
     success_couple_threshold: float = 0.45
     object_goal_radius_range: tuple[float, float] = (0.4, 1.2)
+    object_mass_curriculum_enabled: bool = True
+    object_mass_w_manip_ema_alpha: float = 0.01
+    object_mass_start_w: float = 0.10
+    object_mass_mid_w: float = 0.20
+    object_mass_end_w: float = 0.65
+    object_mass_start_mass: float = 5.0
+    object_mass_mid_mass: float = 1.0
+    object_mass_final_mass: float = 0.5
+    object_mass_mid_log_std: float = 0.15
+    object_mass_final_log_std: float = 0.45
+    object_mass_min: float = 0.15
+    object_mass_max: float = 6.0
 
     def __post_init__(self):
         self.decimation = self.high_level_decimation * self.low_level_decimation

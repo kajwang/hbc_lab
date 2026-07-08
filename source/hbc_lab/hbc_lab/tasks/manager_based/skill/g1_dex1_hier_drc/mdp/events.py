@@ -15,6 +15,8 @@ from hbc_lab.assets.robots.unitree import (
 )
 from hbc_lab.tasks.locomotion import mdp
 
+from .object_mass_curriculum import sample_object_masses
+
 
 def _find_joint_ids(asset: Articulation, joint_names: list[str]) -> list[int]:
     joint_ids, resolved_joint_names = asset.find_joints(joint_names, preserve_order=False)
@@ -85,6 +87,44 @@ def _object_frame_pos_from_root(object_root_pos_w: torch.Tensor) -> torch.Tensor
     return object_frame_pos_w
 
 
+def _apply_object_mass_curriculum(env, env_ids: torch.Tensor, obj) -> None:
+    if not getattr(env.cfg, "object_mass_curriculum_enabled", False):
+        return
+    if not hasattr(env, "object_mass_curriculum_level"):
+        return
+
+    mass = sample_object_masses(
+        env.object_mass_curriculum_level,
+        num_envs=env_ids.shape[0],
+        device=obj.device,
+        dtype=obj.data.root_pos_w.dtype,
+        start_w=env.cfg.object_mass_start_w,
+        mid_w=env.cfg.object_mass_mid_w,
+        end_w=env.cfg.object_mass_end_w,
+        start_mass=env.cfg.object_mass_start_mass,
+        mid_mass=env.cfg.object_mass_mid_mass,
+        final_mass=env.cfg.object_mass_final_mass,
+        mid_log_std=env.cfg.object_mass_mid_log_std,
+        final_log_std=env.cfg.object_mass_final_log_std,
+        min_mass=env.cfg.object_mass_min,
+        max_mass=env.cfg.object_mass_max,
+    )
+
+    env_ids_cpu = env_ids.cpu()
+    mass_cpu = mass.detach().cpu()
+    masses = obj.root_physx_view.get_masses()
+    masses[env_ids_cpu] = mass_cpu.unsqueeze(-1).expand(-1, masses.shape[1])
+    obj.root_physx_view.set_masses(masses, env_ids.cpu())
+
+    ratios = masses[env_ids_cpu] / obj.data.default_mass[env_ids_cpu].cpu()
+    inertias = obj.root_physx_view.get_inertias()
+    inertias[env_ids_cpu] = obj.data.default_inertia[env_ids_cpu].cpu() * ratios
+    obj.root_physx_view.set_inertias(inertias, env_ids.cpu())
+
+    if hasattr(env, "object_mass"):
+        env.object_mass[env_ids] = mass.to(env.object_mass.device)
+
+
 def reset_object_and_support_platforms(
     env,
     env_ids: torch.Tensor,
@@ -129,6 +169,7 @@ def reset_object_and_support_platforms(
     )
 
     obj.write_root_state_to_sim(torch.cat((object_root_pos_w, object_quat_w, object_velocity), dim=-1), env_ids=env_ids)
+    _apply_object_mass_curriculum(env, env_ids, obj)
     env.object_initial_pos_w[env_ids] = _object_frame_pos_from_root(object_root_pos_w)
     env.object_target_pos_w[env_ids] = _object_frame_pos_from_root(target_root_pos_w)
 
