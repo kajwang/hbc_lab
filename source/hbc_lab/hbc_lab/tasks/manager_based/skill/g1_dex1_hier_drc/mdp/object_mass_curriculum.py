@@ -3,42 +3,35 @@ from __future__ import annotations
 import torch
 
 
-def _smoothstep(value: torch.Tensor) -> torch.Tensor:
-    value = torch.clamp(value, 0.0, 1.0)
-    return value * value * (3.0 - 2.0 * value)
-
-
 def object_mass_curriculum_parameters(
     w_manip: torch.Tensor,
     *,
-    start_w: float = 0.10,
-    mid_w: float = 0.20,
-    end_w: float = 0.65,
-    start_mass: float = 5.0,
-    mid_mass: float = 1.0,
+    start_mass: float = 20.0,
+    ref_w: float = 0.10,
+    ref_mass: float = 5.0,
     final_mass: float = 0.5,
-    mid_log_std: float = 0.15,
+    ref_log_std: float = 0.15,
     final_log_std: float = 0.45,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Return log-space mass center and noise scale for the global W_manip curriculum."""
     dtype = w_manip.dtype if w_manip.is_floating_point() else torch.float32
     device = w_manip.device
-    w_manip = w_manip.to(dtype=dtype)
-
-    p_fast = _smoothstep((w_manip - start_w) / (mid_w - start_w))
-    p_slow = _smoothstep((w_manip - mid_w) / (end_w - mid_w))
+    w_manip = torch.clamp(w_manip.to(dtype=dtype), min=0.0)
 
     log_start = torch.log(torch.as_tensor(start_mass, device=device, dtype=dtype))
-    log_mid = torch.log(torch.as_tensor(mid_mass, device=device, dtype=dtype))
+    log_ref = torch.log(torch.as_tensor(ref_mass, device=device, dtype=dtype))
     log_final = torch.log(torch.as_tensor(final_mass, device=device, dtype=dtype))
+    ref_w_t = torch.as_tensor(ref_w, device=device, dtype=dtype)
+    ref_log_std_t = torch.as_tensor(ref_log_std, device=device, dtype=dtype)
+    final_log_std_t = torch.as_tensor(final_log_std, device=device, dtype=dtype)
 
-    fast_log_center = (1.0 - p_fast) * log_start + p_fast * log_mid
-    slow_log_center = (1.0 - p_slow) * log_mid + p_slow * log_final
-    log_center = torch.where(w_manip <= mid_w, fast_log_center, slow_log_center)
+    mass_ratio = torch.clamp((log_ref - log_final) / (log_start - log_final), min=1.0e-6, max=1.0)
+    mass_decay = -torch.log(mass_ratio) / ref_w_t
+    log_center = log_final + (log_start - log_final) * torch.exp(-mass_decay * w_manip)
 
-    fast_log_std = p_fast * mid_log_std
-    slow_log_std = mid_log_std + p_slow * (final_log_std - mid_log_std)
-    log_std = torch.where(w_manip <= mid_w, fast_log_std, slow_log_std)
+    std_ratio = torch.clamp(1.0 - ref_log_std_t / final_log_std_t, min=1.0e-6, max=1.0)
+    std_decay = -torch.log(std_ratio) / ref_w_t
+    log_std = final_log_std_t * (1.0 - torch.exp(-std_decay * w_manip))
     return torch.exp(log_center), log_std
 
 
