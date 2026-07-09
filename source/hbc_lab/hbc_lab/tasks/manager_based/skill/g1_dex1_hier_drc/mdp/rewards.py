@@ -46,8 +46,9 @@ def couple_reward(env) -> torch.Tensor:
     env._couple_gated_gripper_close = (gated_gripper_close1 + gated_gripper_close2).detach()
     env._couple_early_close_penalty = (early_close_penalty1 + early_close_penalty2).detach()
     return (
-        0.5 * near
+        0.4 * near
         + 0.1 * pad_gate
+        + 0.1 * env.c_pinch
         + 0.2 * env.c_grasp
         + 0.2 * gated_gripper_close2
         - 0.2 * early_close_penalty2
@@ -60,7 +61,7 @@ def manip_reward(env) -> torch.Tensor:
     return 0.7 * progress + 0.3 * env.c_couple
 
 
-def hier_drc_reward(env, approach_scale: float = 2.0, couple_scale: float = 15.0, manip_scale: float = 50.0) -> torch.Tensor:
+def hier_drc_reward(env, approach_scale: float = 2.0, couple_scale: float = 20.0, manip_scale: float = 200.0) -> torch.Tensor:
     r_app = approach_reward(env)
     r_couple = couple_reward(env)
     r_manip = manip_reward(env)
