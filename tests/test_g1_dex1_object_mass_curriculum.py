@@ -57,7 +57,7 @@ def test_g1_dex1_reset_object_applies_mass_curriculum_to_physx_masses():
     objects_source = _read(OBJECTS_PATH)
 
     assert "mass_props=sim_utils.MassPropertiesCfg(mass=10.0)" in objects_source
-    assert "object_mass_curriculum_enabled: bool = False" in env_cfg_source
+    assert "object_mass_curriculum_enabled: bool = True" in env_cfg_source
     assert "object_mass_w_manip_ema_alpha: float = 0.01" in env_cfg_source
     assert "object_mass_start_w: float = 0.0" in env_cfg_source
     assert "object_mass_ref_w: float = 0.10" in env_cfg_source

@@ -51,3 +51,11 @@ def test_dex1_root_object_facing_reward_uses_front_half_plane_alignment():
     assert "reward = torch.square(torch.clamp(facing_cos, min=0.0, max=1.0))" in reward_source
     assert "env.extras[\"log\"][\"DRC/root_object_facing_mean\"] = reward.mean()" in reward_source
     assert "root_object_facing = RewTerm(func=root_object_facing_reward, weight=2.0)" in reward_source
+
+
+def test_dex1_manip_reward_provides_linear_couple_incentive():
+    reward_source = _reward_source()
+
+    assert "def manip_reward" in reward_source
+    assert "return 0.7 * progress + 0.3" in reward_source
+    assert "return 0.7 * progress + 0.3 * env.c_couple" not in reward_source

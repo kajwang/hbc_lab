@@ -59,7 +59,7 @@ def couple_reward(env) -> torch.Tensor:
 def manip_reward(env) -> torch.Tensor:
     initial = torch.norm(env.object_initial_pos_w - env.object_target_pos_w, dim=-1)
     progress = torch.clamp(initial - env.d_goal, min=0.0) / (initial + 1e-5)
-    return 0.7 * progress + 0.3 * env.c_couple
+    return 0.7 * progress + 0.3
 
 
 def hier_drc_reward(env, approach_scale: float = 2.0, couple_scale: float = 20.0, manip_scale: float = 200.0) -> torch.Tensor:
