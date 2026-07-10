@@ -50,7 +50,7 @@ APPLE_OBJECT_CFG = RigidObjectCfg(
             max_depenetration_velocity=1.0,
         ),
         collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
-        mass_props=sim_utils.MassPropertiesCfg(mass=20.0),
+        mass_props=sim_utils.MassPropertiesCfg(mass=10.0),
         activate_contact_sensors=True,
     ),
     init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)),

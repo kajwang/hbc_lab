@@ -90,6 +90,8 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self.task_succeeded = torch.zeros(cfg.scene.num_envs, dtype=torch.bool, device=cfg.sim.device)
         self.last_high_level_action = torch.zeros(cfg.scene.num_envs, cfg.action_dim, device=cfg.sim.device)
         self.prev_high_level_action = torch.zeros(cfg.scene.num_envs, cfg.action_dim, device=cfg.sim.device)
+        self._high_level_action_saturation_ratio = torch.zeros((), device=cfg.sim.device)
+        self._high_level_action_abs_mean = torch.zeros((), device=cfg.sim.device)
         self._last_low_level_action = torch.zeros(cfg.scene.num_envs, len(self.body_joint_names), device=cfg.sim.device)
         self.active_hand = torch.zeros(cfg.scene.num_envs, dtype=torch.long, device=cfg.sim.device)
         super().__init__(cfg, render_mode, **kwargs)
@@ -490,7 +492,10 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
 
     def step(self, action: torch.Tensor) -> VecEnvStepReturn:
         self.prev_high_level_action = self.last_high_level_action.clone()
-        self.last_high_level_action = torch.clamp(action.to(self.device), -1.0, 1.0)
+        raw_high_level_action = action.to(self.device)
+        self._high_level_action_saturation_ratio = (torch.abs(raw_high_level_action) >= 1.0).float().mean().detach()
+        self._high_level_action_abs_mean = torch.abs(raw_high_level_action).mean().detach()
+        self.last_high_level_action = torch.clamp(raw_high_level_action, -1.0, 1.0)
         self.command_state = decode_high_level_action(self.last_high_level_action, self.command_state, self.action_limits)
         self._apply_debug_gripper_override()
         self.high_level_command.set_command(
@@ -583,6 +588,8 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self._log_link_contact_diagnostics()
         self.extras["log"]["HL/left_grip_mean"] = self.command_state.left_grip.mean()
         self.extras["log"]["HL/right_grip_mean"] = self.command_state.right_grip.mean()
+        self.extras["log"]["HL/action_saturation_ratio"] = self._high_level_action_saturation_ratio
+        self.extras["log"]["HL/action_abs_mean"] = self._high_level_action_abs_mean
         self._log_high_level_diagnostics()
         self.extras["log"]["Task/success_count"] = self.task_succeeded.sum().float()
         return self.obs_buf, self.reward_buf, self.reset_terminated, self.reset_time_outs, self.extras

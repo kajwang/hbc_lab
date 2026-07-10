@@ -153,7 +153,11 @@ def reset_object_and_support_platforms(
     radius_range = object_goal_radius_range or env.cfg.object_goal_radius_range
     target_offset = torch.zeros_like(object_root_pos_w)
     radius = torch.empty(object_root_pos_w.shape[0], 1, device=obj.device).uniform_(*radius_range)
-    heading = torch.empty(object_root_pos_w.shape[0], 1, device=obj.device).uniform_(-3.14159, 3.14159)
+    robot_root_pos_w = env.scene["robot"].data.root_pos_w[env_ids]
+    away_xy = object_root_pos_w[:, :2] - robot_root_pos_w[:, :2]
+    away_heading = torch.atan2(away_xy[:, 1:2], away_xy[:, 0:1])
+    heading_jitter = torch.empty_like(radius).uniform_(-0.5 * torch.pi, 0.5 * torch.pi)
+    heading = away_heading + heading_jitter
     target_offset[:, 0:1] = radius * torch.cos(heading)
     target_offset[:, 1:2] = radius * torch.sin(heading)
     target_root_pos_w = object_root_pos_w + target_offset

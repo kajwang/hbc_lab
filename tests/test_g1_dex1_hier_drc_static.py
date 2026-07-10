@@ -7,6 +7,7 @@ ASSET_ROOT = HBC_ROOT / "assets/robots"
 TASK_ROOT = HBC_ROOT / "tasks/manager_based/skill/g1_dex1_hier_drc"
 MDP_ROOT = TASK_ROOT / "mdp"
 CONFIG_ROOT = TASK_ROOT / "config"
+TRAIN_PATH = REPO_ROOT / "scripts/rsl_rl/train.py"
 
 
 def _read(path: Path) -> str:
@@ -83,6 +84,34 @@ def test_g1_dex1_hier_env_reuses_current_low_level_policy_interface():
     assert "HL/left_gripper_target_mean" in env_source
     assert "HL/right_gripper_joint_pos_mean" in env_source
     assert "HL/right_gripper_target_buffer_mean" in env_source
+    assert "HL/action_saturation_ratio" in env_source
+    assert "HL/action_abs_mean" in env_source
+
+
+def test_g1_dex1_low_noise_ablation_resets_loaded_policy_std():
+    train_source = _read(TRAIN_PATH)
+    agent_source = _read(CONFIG_ROOT / "agents/rsl_rl_ppo_cfg.py")
+
+    assert "def configure_runner_policy_noise" in train_source
+    assert 'getattr(runner.alg, "policy", None)' in train_source
+    assert 'getattr(runner.alg, "actor_critic", None)' in train_source
+    assert "noise_parameter.fill_(parameter_value)" in train_source
+    assert "optimizer.state.pop(noise_parameter, None)" in train_source
+    assert "noise_parameter.requires_grad_(not freeze)" in train_source
+    assert "policy_noise_std_override: float | None = 0.4" in agent_source
+    assert "freeze_policy_noise_std: bool = True" in agent_source
+    assert "init_noise_std=0.4" in agent_source
+    assert "entropy_coef=1.0e-4" in agent_source
+
+
+def test_g1_dex1_goal_is_sampled_behind_init_relative_to_robot():
+    events_source = _read(MDP_ROOT / "events.py")
+
+    assert 'robot_root_pos_w = env.scene["robot"].data.root_pos_w[env_ids]' in events_source
+    assert "away_xy = object_root_pos_w[:, :2] - robot_root_pos_w[:, :2]" in events_source
+    assert "away_heading = torch.atan2(away_xy[:, 1:2], away_xy[:, 0:1])" in events_source
+    assert "heading_jitter = torch.empty_like(radius).uniform_(-0.5 * torch.pi, 0.5 * torch.pi)" in events_source
+    assert "heading = away_heading + heading_jitter" in events_source
 
 
 def test_g1_dex1_couple_reward_uses_grasp_window_and_inner_pad_contact():
@@ -109,7 +138,7 @@ def test_g1_dex1_couple_reward_uses_grasp_window_and_inner_pad_contact():
     assert "+ 0.2 * env.c_grasp" in reward_source
     assert "def root_object_facing_reward" in reward_source
     assert "DRC/root_object_facing_mean" in reward_source
-    assert "root_object_facing = RewTerm(func=root_object_facing_reward, weight=0.5)" in reward_source
+    assert "root_object_facing = RewTerm(func=root_object_facing_reward, weight=2.0)" in reward_source
     assert "Couple/grasp_window_mean" in env_source
     assert "Couple/pad_gate_mean" in env_source
     assert "ApproachOnly/" not in env_source

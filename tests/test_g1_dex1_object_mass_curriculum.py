@@ -27,11 +27,11 @@ def test_object_mass_curriculum_defines_single_expression_log_schedule():
 
     assert "def object_mass_curriculum_parameters" in source
     assert "def sample_object_masses" in source
-    assert "start_mass: float = 20.0" in source
+    assert "start_mass: float = 10.0" in source
     assert "ref_w: float = 0.10" in source
-    assert "ref_mass: float = 10.0" in source
+    assert "ref_mass: float = 5.0" in source
     assert "anchor_w: float = 0.20" in source
-    assert "anchor_mass: float = 5.0" in source
+    assert "anchor_mass: float = 1.0" in source
     assert "final_mass: float = 0.5" in source
     assert "ref_log_std: float = 0.15" in source
     assert "final_log_std: float = 0.45" in source
@@ -56,14 +56,15 @@ def test_g1_dex1_reset_object_applies_mass_curriculum_to_physx_masses():
     env_source = _read(ENV_PATH)
     objects_source = _read(OBJECTS_PATH)
 
-    assert "mass_props=sim_utils.MassPropertiesCfg(mass=20.0)" in objects_source
-    assert "object_mass_curriculum_enabled: bool = True" in env_cfg_source
+    assert "mass_props=sim_utils.MassPropertiesCfg(mass=10.0)" in objects_source
+    assert "object_mass_curriculum_enabled: bool = False" in env_cfg_source
     assert "object_mass_w_manip_ema_alpha: float = 0.01" in env_cfg_source
     assert "object_mass_start_w: float = 0.0" in env_cfg_source
     assert "object_mass_ref_w: float = 0.10" in env_cfg_source
-    assert "object_mass_ref_mass: float = 10.0" in env_cfg_source
+    assert "object_mass_start_mass: float = 10.0" in env_cfg_source
+    assert "object_mass_ref_mass: float = 5.0" in env_cfg_source
     assert "object_mass_anchor_w: float = 0.20" in env_cfg_source
-    assert "object_mass_anchor_mass: float = 5.0" in env_cfg_source
+    assert "object_mass_anchor_mass: float = 1.0" in env_cfg_source
     assert "object_mass_max: float = 25.0" in env_cfg_source
     assert "self.object_mass_w_manip_ema" in env_source
     assert "self.object_mass_curriculum_level" in env_source

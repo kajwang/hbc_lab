@@ -50,4 +50,4 @@ def test_dex1_root_object_facing_reward_uses_front_half_plane_alignment():
     assert "facing_cos = torch.sum(forward_dir * root_to_object_dir, dim=-1)" in reward_source
     assert "reward = torch.square(torch.clamp(facing_cos, min=0.0, max=1.0))" in reward_source
     assert "env.extras[\"log\"][\"DRC/root_object_facing_mean\"] = reward.mean()" in reward_source
-    assert "root_object_facing = RewTerm(func=root_object_facing_reward, weight=0.5)" in reward_source
+    assert "root_object_facing = RewTerm(func=root_object_facing_reward, weight=2.0)" in reward_source
