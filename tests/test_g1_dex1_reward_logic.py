@@ -30,12 +30,24 @@ def test_dex1_couple_reward_uses_grasp_window_and_inner_pad_contact_gates():
 def test_dex1_couple_reward_restores_pre_approach_only_weights():
     reward_source = _reward_source()
 
-    assert "1.5 * near" in reward_source
-    assert "+ 0.50 * pad_gate" in reward_source
-    assert "+ 0.20 * env.c_grasp" in reward_source
-    assert "+ 0.50 * gated_gripper_close1" in reward_source
-    assert "- 0.50 * early_close_penalty1" in reward_source
-    assert "+ 0.50 * gated_gripper_close2" in reward_source
-    assert "- 0.50 * early_close_penalty2" in reward_source
+    assert "0.4 * near" in reward_source
+    assert "+ 0.1 * pad_gate" in reward_source
+    assert "+ 0.1 * env.c_pinch" in reward_source
+    assert "+ 0.2 * env.c_grasp" in reward_source
+    assert "+ 0.2 * gated_gripper_close2" in reward_source
+    assert "- 0.2 * early_close_penalty2" in reward_source
     assert "hand_center_approach_terms" not in reward_source
     assert "active_grip_penalty" not in reward_source
+
+
+def test_dex1_root_object_facing_reward_uses_front_half_plane_alignment():
+    reward_source = _reward_source()
+
+    assert "def root_object_facing_reward" in reward_source
+    assert "object_pos_w = env.scene[\"object_frame\"].data.target_pos_w[:, 0, :]" in reward_source
+    assert "root_to_object_xy = object_pos_w[:, :2] - robot.data.root_pos_w[:, :2]" in reward_source
+    assert "math_utils.yaw_quat(robot.data.root_quat_w)" in reward_source
+    assert "facing_cos = torch.sum(forward_dir * root_to_object_dir, dim=-1)" in reward_source
+    assert "reward = torch.square(torch.clamp(facing_cos, min=0.0, max=1.0))" in reward_source
+    assert "env.extras[\"log\"][\"DRC/root_object_facing_mean\"] = reward.mean()" in reward_source
+    assert "root_object_facing = RewTerm(func=root_object_facing_reward, weight=0.5)" in reward_source

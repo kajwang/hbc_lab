@@ -72,7 +72,9 @@ class G1Dex1HierDrcEnvCfg(ManagerBasedRLEnvCfg):
     object_mass_start_w: float = 0.0
     object_mass_ref_w: float = 0.10
     object_mass_start_mass: float = 20.0
-    object_mass_ref_mass: float = 5.0
+    object_mass_ref_mass: float = 10.0
+    object_mass_anchor_w: float = 0.20
+    object_mass_anchor_mass: float = 5.0
     object_mass_final_mass: float = 0.5
     object_mass_ref_log_std: float = 0.15
     object_mass_final_log_std: float = 0.45

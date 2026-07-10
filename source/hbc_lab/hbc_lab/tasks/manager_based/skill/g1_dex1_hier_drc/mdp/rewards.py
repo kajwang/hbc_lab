@@ -3,6 +3,7 @@ from __future__ import annotations
 import torch
 from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
+from isaaclab.utils import math as math_utils
 from isaaclab.utils import configclass
 
 from hbc_lab.tasks.locomotion import mdp
@@ -75,6 +76,23 @@ def command_smoothness(env) -> torch.Tensor:
     return torch.sum(torch.square(env.last_high_level_action - env.prev_high_level_action), dim=-1)
 
 
+def root_object_facing_reward(env, eps: float = 1.0e-6) -> torch.Tensor:
+    robot = env.scene["robot"]
+    object_pos_w = env.scene["object_frame"].data.target_pos_w[:, 0, :]
+    root_to_object_xy = object_pos_w[:, :2] - robot.data.root_pos_w[:, :2]
+    root_to_object_dir = root_to_object_xy / torch.clamp(torch.norm(root_to_object_xy, dim=-1, keepdim=True), min=eps)
+
+    forward_b = torch.zeros_like(robot.data.root_pos_w)
+    forward_b[:, 0] = 1.0
+    forward_w = math_utils.quat_apply(math_utils.yaw_quat(robot.data.root_quat_w), forward_b)[:, :2]
+    forward_dir = forward_w / torch.clamp(torch.norm(forward_w, dim=-1, keepdim=True), min=eps)
+
+    facing_cos = torch.sum(forward_dir * root_to_object_dir, dim=-1)
+    reward = torch.square(torch.clamp(facing_cos, min=0.0, max=1.0))
+    env.extras["log"]["DRC/root_object_facing_mean"] = reward.mean()
+    return reward
+
+
 def both_hand_center_tracking_error_penalty(env) -> torch.Tensor:
     left_target_w = env.low_level_obs_builder._target_pos_w(
         env.command_state.left_wrist_pose_b,
@@ -106,6 +124,7 @@ class G1Dex1HierDrcRewardsCfg:
     task_success = RewTerm(func=task_success_reward, weight=1.0)
     object_fall = RewTerm(func=object_fall_penalty, weight=-2.0)
     command_smoothness = RewTerm(func=command_smoothness, weight=-0.02)
+    root_object_facing = RewTerm(func=root_object_facing_reward, weight=2.0)
     both_hand_center_tracking_error_penalty = RewTerm(func=both_hand_center_tracking_error_penalty, weight=-2.0)
     is_alive = RewTerm(func=mdp.is_alive, weight=1.0)
     is_terminated = RewTerm(func=mdp.is_terminated, weight=-200.0)

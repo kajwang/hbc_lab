@@ -101,6 +101,8 @@ def _apply_object_mass_curriculum(env, env_ids: torch.Tensor, obj) -> None:
         start_mass=env.cfg.object_mass_start_mass,
         ref_w=env.cfg.object_mass_ref_w,
         ref_mass=env.cfg.object_mass_ref_mass,
+        anchor_w=env.cfg.object_mass_anchor_w,
+        anchor_mass=env.cfg.object_mass_anchor_mass,
         final_mass=env.cfg.object_mass_final_mass,
         ref_log_std=env.cfg.object_mass_ref_log_std,
         final_log_std=env.cfg.object_mass_final_log_std,

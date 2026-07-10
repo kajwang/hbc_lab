@@ -103,9 +103,13 @@ def test_g1_dex1_couple_reward_uses_grasp_window_and_inner_pad_contact():
     assert "pad_gate = torch.clamp(inner_pad_contact / INNER_PAD_CONTACT_GATE_SCALE, min=0.0, max=1.0)" in reward_source
     assert "gated_gripper_close1 = gripper_close * pad_gate" in reward_source
     assert "gated_gripper_close2 = gripper_close * grasp_window" in reward_source
-    assert "1.5 * near" in reward_source
-    assert "+ 0.50 * pad_gate" in reward_source
-    assert "+ 0.20 * env.c_grasp" in reward_source
+    assert "0.4 * near" in reward_source
+    assert "+ 0.1 * pad_gate" in reward_source
+    assert "+ 0.1 * env.c_pinch" in reward_source
+    assert "+ 0.2 * env.c_grasp" in reward_source
+    assert "def root_object_facing_reward" in reward_source
+    assert "DRC/root_object_facing_mean" in reward_source
+    assert "root_object_facing = RewTerm(func=root_object_facing_reward, weight=0.5)" in reward_source
     assert "Couple/grasp_window_mean" in env_source
     assert "Couple/pad_gate_mean" in env_source
     assert "ApproachOnly/" not in env_source

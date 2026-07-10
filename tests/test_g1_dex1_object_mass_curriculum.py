@@ -29,15 +29,21 @@ def test_object_mass_curriculum_defines_single_expression_log_schedule():
     assert "def sample_object_masses" in source
     assert "start_mass: float = 20.0" in source
     assert "ref_w: float = 0.10" in source
-    assert "ref_mass: float = 5.0" in source
+    assert "ref_mass: float = 10.0" in source
+    assert "anchor_w: float = 0.20" in source
+    assert "anchor_mass: float = 5.0" in source
     assert "final_mass: float = 0.5" in source
     assert "ref_log_std: float = 0.15" in source
     assert "final_log_std: float = 0.45" in source
     assert "torch.log(torch.as_tensor(start_mass" in source
     assert "torch.log(torch.as_tensor(ref_mass" in source
+    assert "torch.log(torch.as_tensor(anchor_mass" in source
     assert "torch.log(torch.as_tensor(final_mass" in source
-    assert "mass_decay = -torch.log(mass_ratio) / ref_w_t" in source
-    assert "log_center = log_final + (log_start - log_final) * torch.exp(-mass_decay * w_manip)" in source
+    assert "ref_decay_target = -torch.log(ref_log_ratio)" in source
+    assert "anchor_decay_target = -torch.log(anchor_log_ratio)" in source
+    assert "mass_power = torch.log(anchor_decay_target / ref_decay_target) / torch.log(anchor_w_t / ref_w_t)" in source
+    assert "mass_decay = ref_decay_target / torch.pow(ref_w_t, mass_power)" in source
+    assert "log_center = log_final + (log_start - log_final) * torch.exp(-mass_decay * torch.pow(w_manip, mass_power))" in source
     assert "std_decay = -torch.log(std_ratio) / ref_w_t" in source
     assert "log_std = final_log_std_t * (1.0 - torch.exp(-std_decay * w_manip))" in source
     assert "torch.exp(log_center + noise * log_std)" in source
@@ -55,7 +61,9 @@ def test_g1_dex1_reset_object_applies_mass_curriculum_to_physx_masses():
     assert "object_mass_w_manip_ema_alpha: float = 0.01" in env_cfg_source
     assert "object_mass_start_w: float = 0.0" in env_cfg_source
     assert "object_mass_ref_w: float = 0.10" in env_cfg_source
-    assert "object_mass_ref_mass: float = 5.0" in env_cfg_source
+    assert "object_mass_ref_mass: float = 10.0" in env_cfg_source
+    assert "object_mass_anchor_w: float = 0.20" in env_cfg_source
+    assert "object_mass_anchor_mass: float = 5.0" in env_cfg_source
     assert "object_mass_max: float = 25.0" in env_cfg_source
     assert "self.object_mass_w_manip_ema" in env_source
     assert "self.object_mass_curriculum_level" in env_source
@@ -63,5 +71,7 @@ def test_g1_dex1_reset_object_applies_mass_curriculum_to_physx_masses():
     assert "DRC/object_mass_mean" in env_source
     assert "sample_object_masses" in events_source
     assert "env.object_mass_curriculum_level" in events_source
+    assert "anchor_w=env.cfg.object_mass_anchor_w" in events_source
+    assert "anchor_mass=env.cfg.object_mass_anchor_mass" in events_source
     assert "root_physx_view.get_masses()" in events_source
     assert "root_physx_view.set_masses(masses, env_ids.cpu())" in events_source
