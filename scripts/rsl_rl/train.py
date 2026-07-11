@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import inspect
-import math
 import os
 import shutil
 import sys
@@ -103,38 +102,6 @@ torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = False
 
 
-def configure_runner_policy_noise(runner, noise_std: float, freeze: bool) -> None:
-    """Override checkpoint exploration noise and discard stale optimizer momentum."""
-    if noise_std <= 0.0:
-        raise ValueError(f"Policy noise std must be positive, got {noise_std}")
-
-    policy = getattr(runner.alg, "policy", None)
-    if policy is None:
-        policy = getattr(runner.alg, "actor_critic", None)
-    if policy is None:
-        raise AttributeError("Could not find the RSL-RL policy on runner.alg")
-    while hasattr(policy, "module"):
-        policy = policy.module
-
-    if hasattr(policy, "std"):
-        noise_parameter = policy.std
-        parameter_value = noise_std
-    elif hasattr(policy, "log_std"):
-        noise_parameter = policy.log_std
-        parameter_value = math.log(noise_std)
-    else:
-        raise AttributeError("RSL-RL policy exposes neither std nor log_std")
-
-    with torch.no_grad():
-        noise_parameter.fill_(parameter_value)
-    optimizer = getattr(runner.alg, "optimizer", None)
-    if optimizer is not None:
-        optimizer.state.pop(noise_parameter, None)
-    noise_parameter.requires_grad_(not freeze)
-    mode = "fixed" if freeze else "trainable"
-    print(f"[INFO]: Policy exploration std overridden to {noise_std:.4f} ({mode}).")
-
-
 @hydra_task_config(args_cli.task, "rsl_rl_cfg_entry_point")
 def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg: RslRlOnPolicyRunnerCfg):
     """Train with RSL-RL."""
@@ -188,14 +155,6 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     if agent_cfg.resume or agent_cfg.algorithm.class_name == "Distillation":
         print(f"[INFO]: Loading model checkpoint from: {resume_path}")
         runner.load(resume_path)
-
-    policy_noise_std_override = getattr(agent_cfg, "policy_noise_std_override", None)
-    if policy_noise_std_override is not None:
-        configure_runner_policy_noise(
-            runner,
-            noise_std=policy_noise_std_override,
-            freeze=getattr(agent_cfg, "freeze_policy_noise_std", False),
-        )
 
     dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
     dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)

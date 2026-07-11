@@ -88,20 +88,16 @@ def test_g1_dex1_hier_env_reuses_current_low_level_policy_interface():
     assert "HL/action_abs_mean" in env_source
 
 
-def test_g1_dex1_low_noise_ablation_resets_loaded_policy_std():
+def test_g1_dex1_uses_trainable_checkpoint_policy_std():
     train_source = _read(TRAIN_PATH)
     agent_source = _read(CONFIG_ROOT / "agents/rsl_rl_ppo_cfg.py")
 
-    assert "def configure_runner_policy_noise" in train_source
-    assert 'getattr(runner.alg, "policy", None)' in train_source
-    assert 'getattr(runner.alg, "actor_critic", None)' in train_source
-    assert "noise_parameter.fill_(parameter_value)" in train_source
-    assert "optimizer.state.pop(noise_parameter, None)" in train_source
-    assert "noise_parameter.requires_grad_(not freeze)" in train_source
-    assert "policy_noise_std_override: float | None = 0.4" in agent_source
-    assert "freeze_policy_noise_std: bool = True" in agent_source
-    assert "init_noise_std=0.4" in agent_source
-    assert "entropy_coef=1.0e-4" in agent_source
+    assert "def configure_runner_policy_noise" not in train_source
+    assert "policy_noise_std_override" not in train_source
+    assert "policy_noise_std_override" not in agent_source
+    assert "freeze_policy_noise_std" not in agent_source
+    assert "init_noise_std=0.6" in agent_source
+    assert "entropy_coef=0.005" in agent_source
 
 
 def test_g1_dex1_goal_is_sampled_behind_init_relative_to_robot():
