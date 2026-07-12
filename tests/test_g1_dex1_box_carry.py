@@ -29,7 +29,7 @@ def _load_contact_progress_module():
     return module
 
 
-def test_bimanual_support_progress_requires_both_hands_but_accepts_any_region_per_hand():
+def test_bimanual_support_progress_rewards_each_required_region_and_requires_both_hands():
     module = _load_contact_progress_module()
     progress = module.compute_bimanual_support_progress(
         left_distance=torch.tensor([0.2, 0.1]),
@@ -39,9 +39,9 @@ def test_bimanual_support_progress_requires_both_hands_but_accepts_any_region_pe
     )
 
     assert torch.allclose(progress.distance, torch.tensor([0.4, 0.3]))
-    assert torch.allclose(progress.left_support, torch.tensor([0.8, 0.9]))
-    assert torch.allclose(progress.right_support, torch.tensor([0.6, 0.0]))
-    assert torch.allclose(progress.bimanual_support, torch.tensor([0.6, 0.0]))
+    assert torch.allclose(progress.left_support, torch.tensor([0.3, 0.3]))
+    assert torch.allclose(progress.right_support, torch.tensor([0.7 / 3.0, 0.0]))
+    assert torch.allclose(progress.bimanual_support, torch.tensor([0.7 / 3.0, 0.0]))
 
 
 def test_box_carry_task_uses_ground_cube_far_goal_and_no_platforms():
@@ -49,7 +49,7 @@ def test_box_carry_task_uses_ground_cube_far_goal_and_no_platforms():
     scenes_source = _read(MDP_ROOT / "scenes.py")
     events_source = _read(MDP_ROOT / "events.py")
 
-    assert "BOX_CUBE_SIZE = (0.40, 0.30, 0.25)" in assets_source
+    assert "BOX_CUBE_SIZE = (0.30, 0.25, 0.20)" in assets_source
     assert "BOX_CUBE_CENTER_Z = 0.5 * BOX_CUBE_SIZE[2]" in assets_source
     assert "BOX_CUBE_OBJECT_CFG" in assets_source
     assert "size=BOX_CUBE_SIZE" in assets_source
@@ -59,6 +59,12 @@ def test_box_carry_task_uses_ground_cube_far_goal_and_no_platforms():
     assert "object_target_platform = None" in scenes_source
     assert "left_palm_contact" in scenes_source
     assert "right_palm_contact" in scenes_source
+    support_keys = scenes_source.split("BOX_SUPPORT_CONTACT_KEYS = (", maxsplit=1)[1].split(")", maxsplit=1)[0]
+    assert '"palm"' in support_keys
+    assert '"Link1_2"' in support_keys
+    assert '"Link2_2"' in support_keys
+    assert "Link1_3" not in support_keys
+    assert "Link2_3" not in support_keys
     assert '"x": (1.2, 1.8)' in events_source
     assert '"object_goal_radius_range": (1.5, 2.5)' in events_source
     assert "away_heading" in events_source

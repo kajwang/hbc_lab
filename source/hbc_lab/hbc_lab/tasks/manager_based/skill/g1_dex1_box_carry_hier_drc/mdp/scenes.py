@@ -19,8 +19,6 @@ BOX_SUPPORT_CONTACT_KEYS = (
     "palm",
     "Link1_2",
     "Link2_2",
-    "Link1_3",
-    "Link2_3",
 )
 
 BOX_OBJECT_FRAME_MARKER_CFG = FRAME_MARKER_CFG.replace(

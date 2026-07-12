@@ -28,8 +28,8 @@ def compute_bimanual_support_progress(
         raise ValueError("left and right region contacts must have identical shapes")
     if left_region_contacts.ndim != 2 or left_region_contacts.shape[0] != left_distance.shape[0]:
         raise ValueError("region contacts must have shape (num_envs, num_regions)")
-    left_support = torch.amax(left_region_contacts, dim=-1)
-    right_support = torch.amax(right_region_contacts, dim=-1)
+    left_support = torch.mean(left_region_contacts, dim=-1)
+    right_support = torch.mean(right_region_contacts, dim=-1)
     return BimanualSupportProgress(
         distance=torch.maximum(left_distance, right_distance),
         left_distance=left_distance,
