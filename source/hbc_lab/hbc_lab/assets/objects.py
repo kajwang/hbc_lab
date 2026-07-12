@@ -13,6 +13,8 @@ OBJECT_PLATFORM_CENTER_Z = OBJECT_PLATFORM_HEIGHT * 0.5
 APPLE_SCALE = 0.007
 APPLE_OBJECT_FRAME_OFFSET_Z = 4.5 * APPLE_SCALE
 OBJECT_ROOT_ON_PLATFORM_Z = OBJECT_PLATFORM_HEIGHT
+BOX_CUBE_SIZE = (0.40, 0.30, 0.25)
+BOX_CUBE_CENTER_Z = 0.5 * BOX_CUBE_SIZE[2]
 
 
 def _make_object_platform_cfg(prim_name: str) -> RigidObjectCfg:
@@ -54,6 +56,30 @@ APPLE_OBJECT_CFG = RigidObjectCfg(
         activate_contact_sensors=True,
     ),
     init_state=RigidObjectCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0), rot=(1.0, 0.0, 0.0, 0.0)),
+)
+
+BOX_CUBE_OBJECT_CFG = RigidObjectCfg(
+    prim_path="{ENV_REGEX_NS}/object",
+    spawn=sim_utils.CuboidCfg(
+        size=BOX_CUBE_SIZE,
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            disable_gravity=False,
+            max_depenetration_velocity=1.0,
+        ),
+        collision_props=sim_utils.CollisionPropertiesCfg(collision_enabled=True),
+        mass_props=sim_utils.MassPropertiesCfg(mass=10.0),
+        physics_material=sim_utils.RigidBodyMaterialCfg(
+            static_friction=1.0,
+            dynamic_friction=0.8,
+            restitution=0.0,
+        ),
+        visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.52, 0.36, 0.18)),
+        activate_contact_sensors=True,
+    ),
+    init_state=RigidObjectCfg.InitialStateCfg(
+        pos=(0.0, 0.0, BOX_CUBE_CENTER_Z),
+        rot=(1.0, 0.0, 0.0, 0.0),
+    ),
 )
 
 SMALL_CUBE_OBJECT_CFG = APPLE_OBJECT_CFG

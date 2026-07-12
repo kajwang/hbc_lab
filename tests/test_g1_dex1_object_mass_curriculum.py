@@ -14,6 +14,10 @@ ENV_CFG_PATH = (
     REPO_ROOT
     / "source/hbc_lab/hbc_lab/tasks/manager_based/skill/g1_dex1_hier_drc/config/g1_dex1_env_cfg.py"
 )
+FLAT_ENV_CFG_PATH = (
+    REPO_ROOT
+    / "source/hbc_lab/hbc_lab/tasks/manager_based/skill/g1_dex1_hier_drc/config/flat_env_cfg.py"
+)
 ENV_PATH = REPO_ROOT / "source/hbc_lab/hbc_lab/tasks/manager_based/skill/g1_dex1_hier_drc/config/g1_dex1_env.py"
 OBJECTS_PATH = REPO_ROOT / "source/hbc_lab/hbc_lab/assets/objects.py"
 
@@ -76,3 +80,10 @@ def test_g1_dex1_reset_object_applies_mass_curriculum_to_physx_masses():
     assert "anchor_mass=env.cfg.object_mass_anchor_mass" in events_source
     assert "root_physx_view.get_masses()" in events_source
     assert "root_physx_view.set_masses(masses, env_ids.cpu())" in events_source
+
+
+def test_g1_dex1_play_starts_at_final_object_mass_curriculum_level():
+    flat_env_cfg_source = _read(FLAT_ENV_CFG_PATH)
+    play_cfg_source = flat_env_cfg_source.split("class G1Dex1HierDrcFlatPlayEnvCfg", maxsplit=1)[1]
+
+    assert "self.object_mass_start_w = 1.0" in play_cfg_source

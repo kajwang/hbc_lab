@@ -13,6 +13,7 @@ from isaaclab.utils import configclass
 from isaaclab.utils import math as math_utils
 from isaaclab.utils.math import yaw_quat
 
+from .contact_labels import ContactMode
 from .contact_progress import sample_active_hands
 
 
@@ -30,6 +31,7 @@ class G1Dex1HierCommand(CommandTerm):
         self.left_grip = torch.zeros(self.num_envs, 1, device=self.device)
         self.right_grip = torch.zeros(self.num_envs, 1, device=self.device)
         self.active_hand = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        self.contact_label = env.contact_label
         self.left_anchor_body_id = self.robot.find_bodies("left_shoulder_pitch_link")[0][0]
         self.right_anchor_body_id = self.robot.find_bodies("right_shoulder_pitch_link")[0][0]
         self.anchor_height_offset = 0.43
@@ -80,11 +82,22 @@ class G1Dex1HierCommand(CommandTerm):
             return
         env_ids_t = torch.as_tensor(env_ids, device=self.device, dtype=torch.long)
         self._set_defaults(env_ids_t)
-        self.active_hand[env_ids_t] = sample_active_hands(
-            len(env_ids_t),
-            self.device,
-            left_probability=self.cfg.left_hand_probability,
-        )
+        if self.cfg.fixed_effector_mask is None:
+            self.active_hand[env_ids_t] = sample_active_hands(
+                len(env_ids_t),
+                self.device,
+                left_probability=self.cfg.left_hand_probability,
+            )
+            self.contact_label.set_single_active_hand(env_ids_t, self.active_hand[env_ids_t])
+        else:
+            effector_mask = torch.tensor(
+                self.cfg.fixed_effector_mask,
+                device=self.device,
+                dtype=self.contact_label.effector_mask.dtype,
+            ).repeat(len(env_ids_t), 1)
+            self.contact_label.set_effector_mask(env_ids_t, effector_mask)
+            self.active_hand[env_ids_t] = torch.argmax(effector_mask, dim=-1)
+        self.contact_label.set_mode(env_ids_t, self.cfg.contact_mode)
 
     def _update_command(self):
         return
@@ -214,6 +227,8 @@ class G1Dex1HierCommandCfg(CommandTermCfg):
     class_type: type = G1Dex1HierCommand
     asset_name: str = MISSING
     left_hand_probability: float = 0.5
+    fixed_effector_mask: tuple[float, float] | None = None
+    contact_mode: int = int(ContactMode.INNER_PAD_GRASP)
     default_root_height: float = 0.8
     default_torso_pitch: float = 0.0
     default_left_wrist_pose_b: tuple[float, float, float, float, float, float, float] = (

@@ -71,6 +71,19 @@ def test_g1_dex1_task_is_registered_separately_from_dex3():
     assert "g1_dex3_hier_drc" in tasks_init
 
 
+def test_g1_dex1_samples_both_active_hands_and_exposes_contact_label_mask():
+    flat_cfg_source = _read(CONFIG_ROOT / "flat_env_cfg.py")
+    command_source = _read(MDP_ROOT / "commands.py")
+    observation_source = _read(MDP_ROOT / "observations.py")
+    env_source = _read(CONFIG_ROOT / "g1_dex1_env.py")
+
+    assert "self.commands.high_level.left_hand_probability = 0.5" in flat_cfg_source
+    assert "self.commands.high_level.left_hand_probability = 0.0" not in flat_cfg_source
+    assert "self.contact_label.set_single_active_hand" in command_source
+    assert "env.contact_label.effector_mask" in observation_source
+    assert "ContactLabelCommand.from_active_hand" in env_source
+
+
 def test_g1_dex1_hier_env_reuses_current_low_level_policy_interface():
     cfg_source = _read(CONFIG_ROOT / "g1_dex1_env_cfg.py")
     env_source = _read(CONFIG_ROOT / "g1_dex1_env.py")

@@ -9,6 +9,7 @@ from isaaclab.markers.config import FRAME_MARKER_CFG
 from hbc_lab.assets.objects import OBJECT_PLATFORM_HEIGHT
 from hbc_lab.assets.robots.unitree import G1_29DOF_BODY_JOINT_NAMES
 
+from ..mdp.contact_labels import ContactLabelCommand, ContactMode
 from ..mdp.contact_progress import (
     compute_active_hand_grasp_progress,
 )
@@ -94,6 +95,10 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self._high_level_action_abs_mean = torch.zeros((), device=cfg.sim.device)
         self._last_low_level_action = torch.zeros(cfg.scene.num_envs, len(self.body_joint_names), device=cfg.sim.device)
         self.active_hand = torch.zeros(cfg.scene.num_envs, dtype=torch.long, device=cfg.sim.device)
+        self.contact_label = ContactLabelCommand.from_active_hand(
+            self.active_hand,
+            mode=ContactMode.INNER_PAD_GRASP,
+        )
         super().__init__(cfg, render_mode, **kwargs)
 
         robot = self.scene["robot"]

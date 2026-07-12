@@ -4,9 +4,7 @@ from dataclasses import dataclass
 
 import torch
 
-
-LEFT_HAND = 0
-RIGHT_HAND = 1
+from .contact_labels import LEFT_HAND, RIGHT_HAND
 
 
 @dataclass

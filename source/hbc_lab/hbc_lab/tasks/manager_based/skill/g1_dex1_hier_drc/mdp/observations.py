@@ -27,8 +27,8 @@ def object_goal_hand_obs(env) -> torch.Tensor:
     goal_pos_b = quat_apply_inverse(robot.data.root_quat_w, goal_pos_w - robot.data.root_pos_w)
     left_pos_b = quat_apply_inverse(robot.data.root_quat_w, left_pos_w - robot.data.root_pos_w)
     right_pos_b = quat_apply_inverse(robot.data.root_quat_w, right_pos_w - robot.data.root_pos_w)
-    active_hand = torch.nn.functional.one_hot(env.active_hand, num_classes=2).to(dtype=object_pos_b.dtype)
-    return torch.cat((object_pos_b, goal_pos_b, left_pos_b, right_pos_b, active_hand), dim=-1)
+    effector_mask = env.contact_label.effector_mask.to(dtype=object_pos_b.dtype)
+    return torch.cat((object_pos_b, goal_pos_b, left_pos_b, right_pos_b, effector_mask), dim=-1)
 
 
 def grip_obs(env) -> torch.Tensor:
