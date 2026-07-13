@@ -48,6 +48,7 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         self.left_support_contact = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.right_support_contact = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.bimanual_support_contact = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
+        self.bimanual_contact_gate = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.box_lift_height = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.left_face_target_pos_w = torch.zeros(cfg.scene.num_envs, 3, device=cfg.sim.device)
         self.right_face_target_pos_w = torch.zeros(cfg.scene.num_envs, 3, device=cfg.sim.device)
@@ -147,13 +148,14 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         self.d_active_hand = progress.distance
         self.left_support_contact = progress.left_support
         self.right_support_contact = progress.right_support
-        self.bimanual_support_contact = progress.bimanual_support
-        self.left_hand_contact = progress.left_support
-        self.right_hand_contact = progress.right_support
-        self._step_left_contact = progress.left_support
-        self._step_right_contact = progress.right_support
-        self.active_left_finger_contact = progress.left_support
-        self.active_right_finger_contact = progress.right_support
+        self.bimanual_support_contact = progress.support_density
+        self.bimanual_contact_gate = progress.couple_gate
+        self.left_hand_contact = progress.left_contact_gate
+        self.right_hand_contact = progress.right_contact_gate
+        self._step_left_contact = progress.left_contact_gate
+        self._step_right_contact = progress.right_contact_gate
+        self.active_left_finger_contact = progress.left_contact_gate
+        self.active_right_finger_contact = progress.right_contact_gate
         self.active_left_finger_force = torch.amax(self._support_region_forces("left"), dim=-1)
         self.active_right_finger_force = torch.amax(self._support_region_forces("right"), dim=-1)
         self.active_grip = 0.5 * (
@@ -161,10 +163,9 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         )
 
         self.d_goal = torch.norm(object_pos_w - self.object_target_pos_w, dim=-1)
-        mean_support = 0.5 * (progress.left_support + progress.right_support)
-        self.c_contact = update_ema(self.c_contact, mean_support, alpha=0.2)
-        self.c_grasp = update_ema(self.c_grasp, progress.bimanual_support, alpha=0.2)
-        self.c_couple = update_ema(self.c_couple, progress.bimanual_support, alpha=0.2)
+        self.c_contact = update_ema(self.c_contact, progress.support_density, alpha=0.2)
+        self.c_grasp = update_ema(self.c_grasp, progress.support_density, alpha=0.2)
+        self.c_couple = update_ema(self.c_couple, progress.couple_gate, alpha=0.2)
         zeros = torch.zeros_like(self.c_couple)
         self.c_opposition = update_ema(self.c_opposition, zeros, alpha=0.2)
         self.c_pinch = update_ema(self.c_pinch, zeros, alpha=0.2)
@@ -186,6 +187,7 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         self.left_support_contact[env_ids] = 0.0
         self.right_support_contact[env_ids] = 0.0
         self.bimanual_support_contact[env_ids] = 0.0
+        self.bimanual_contact_gate[env_ids] = 0.0
         self.box_lift_height[env_ids] = 0.0
         self.left_face_target_pos_w[env_ids] = 0.0
         self.right_face_target_pos_w[env_ids] = 0.0
@@ -215,6 +217,8 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         self.extras["log"]["BoxCarry/left_support_mean"] = self.left_support_contact.mean()
         self.extras["log"]["BoxCarry/right_support_mean"] = self.right_support_contact.mean()
         self.extras["log"]["BoxCarry/bimanual_support_mean"] = self.bimanual_support_contact.mean()
+        self.extras["log"]["BoxCarry/support_density_mean"] = self.bimanual_support_contact.mean()
+        self.extras["log"]["BoxCarry/couple_gate_mean"] = self.bimanual_contact_gate.mean()
         self.extras["log"]["BoxCarry/left_face_target_error"] = self.left_hand_object_distance.mean()
         self.extras["log"]["BoxCarry/right_face_target_error"] = self.right_hand_object_distance.mean()
         self.extras["log"]["BoxCarry/left_positive_assignment_ratio"] = (

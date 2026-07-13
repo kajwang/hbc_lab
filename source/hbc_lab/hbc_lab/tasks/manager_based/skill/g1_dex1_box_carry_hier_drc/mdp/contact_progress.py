@@ -12,7 +12,10 @@ class BimanualSupportProgress:
     right_distance: torch.Tensor
     left_support: torch.Tensor
     right_support: torch.Tensor
-    bimanual_support: torch.Tensor
+    left_contact_gate: torch.Tensor
+    right_contact_gate: torch.Tensor
+    couple_gate: torch.Tensor
+    support_density: torch.Tensor
 
 
 def compute_bimanual_support_progress(
@@ -30,11 +33,16 @@ def compute_bimanual_support_progress(
         raise ValueError("region contacts must have shape (num_envs, num_regions)")
     left_support = torch.mean(left_region_contacts, dim=-1)
     right_support = torch.mean(right_region_contacts, dim=-1)
+    left_contact_gate = torch.amax(left_region_contacts, dim=-1)
+    right_contact_gate = torch.amax(right_region_contacts, dim=-1)
     return BimanualSupportProgress(
         distance=torch.maximum(left_distance, right_distance),
         left_distance=left_distance,
         right_distance=right_distance,
         left_support=left_support,
         right_support=right_support,
-        bimanual_support=torch.minimum(left_support, right_support),
+        left_contact_gate=left_contact_gate,
+        right_contact_gate=right_contact_gate,
+        couple_gate=torch.minimum(left_contact_gate, right_contact_gate),
+        support_density=0.5 * (left_support + right_support),
     )

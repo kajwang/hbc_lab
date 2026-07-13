@@ -16,7 +16,6 @@ from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.mdp.scenes import (
 
 BOX_PALM_CONTACT_SENSOR_NAMES = ("left_palm_contact", "right_palm_contact")
 BOX_SUPPORT_CONTACT_KEYS = (
-    "palm",
     "Link1_2",
     "Link2_2",
 )

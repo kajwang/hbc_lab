@@ -82,7 +82,7 @@ def test_face_assignment_uses_the_shorter_pairing():
     assert torch.allclose(right_target, torch.stack((negative[0], positive[1])))
 
 
-def test_bimanual_support_progress_rewards_each_required_region_and_requires_both_hands():
+def test_bimanual_support_separates_contact_gate_from_support_density():
     module = _load_contact_progress_module()
     progress = module.compute_bimanual_support_progress(
         left_distance=torch.tensor([0.2, 0.1]),
@@ -94,7 +94,10 @@ def test_bimanual_support_progress_rewards_each_required_region_and_requires_bot
     assert torch.allclose(progress.distance, torch.tensor([0.4, 0.3]))
     assert torch.allclose(progress.left_support, torch.tensor([0.3, 0.3]))
     assert torch.allclose(progress.right_support, torch.tensor([0.7 / 3.0, 0.0]))
-    assert torch.allclose(progress.bimanual_support, torch.tensor([0.7 / 3.0, 0.0]))
+    assert torch.allclose(progress.left_contact_gate, torch.tensor([0.8, 0.9]))
+    assert torch.allclose(progress.right_contact_gate, torch.tensor([0.6, 0.0]))
+    assert torch.allclose(progress.couple_gate, torch.tensor([0.6, 0.0]))
+    assert torch.allclose(progress.support_density, torch.tensor([4.0 / 15.0, 0.15]))
 
 
 def test_box_carry_task_uses_ground_cube_far_goal_and_no_platforms():
@@ -113,7 +116,7 @@ def test_box_carry_task_uses_ground_cube_far_goal_and_no_platforms():
     assert "left_palm_contact" in scenes_source
     assert "right_palm_contact" in scenes_source
     support_keys = scenes_source.split("BOX_SUPPORT_CONTACT_KEYS = (", maxsplit=1)[1].split(")", maxsplit=1)[0]
-    assert '"palm"' in support_keys
+    assert '"palm"' not in support_keys
     assert '"Link1_2"' in support_keys
     assert '"Link2_2"' in support_keys
     assert "Link1_3" not in support_keys
@@ -137,7 +140,10 @@ def test_box_carry_uses_bimanual_contact_label_and_removes_gripper_close_shaping
     assert "fixed_effector_mask = (1.0, 1.0)" in cfg_source
     assert "ContactMode.BIMANUAL_BOX_SUPPORT" in cfg_source
     assert "compute_bimanual_support_progress" in env_source
-    assert "self.c_couple = update_ema(self.c_couple, progress.bimanual_support" in env_source
+    assert "self.bimanual_support_contact = progress.support_density" in env_source
+    assert "self.bimanual_contact_gate = progress.couple_gate" in env_source
+    assert "self.c_grasp = update_ema(self.c_grasp, progress.support_density" in env_source
+    assert "self.c_couple = update_ema(self.c_couple, progress.couple_gate" in env_source
     assert "gripper_close" not in rewards_source
     assert "gated_gripper_close" not in rewards_source
     assert "early_close" not in rewards_source
