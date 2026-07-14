@@ -38,6 +38,17 @@ def compute_independent_support_reward_terms(
     return left_gate, right_gate, gated_support, early_contact
 
 
+def compute_bimanual_distance_gated_couple(
+    left_gate: torch.Tensor,
+    right_gate: torch.Tensor,
+    raw_couple: torch.Tensor,
+) -> torch.Tensor:
+    """Allow couple progress only where both hands satisfy their distance gates."""
+    if not (left_gate.shape == right_gate.shape == raw_couple.shape):
+        raise ValueError("distance gates and raw_couple must have identical shapes")
+    return torch.minimum(left_gate, right_gate) * raw_couple
+
+
 def compute_bimanual_support_progress(
     left_distance: torch.Tensor,
     right_distance: torch.Tensor,

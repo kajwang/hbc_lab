@@ -119,6 +119,19 @@ def test_bimanual_support_reward_gates_each_hand_by_its_own_distance():
     assert torch.allclose(early_contact, 0.5 * 0.6 * (1.0 - expected_right_gate))
 
 
+def test_bimanual_couple_progress_requires_both_distance_gates():
+    module = _load_contact_progress_module()
+    assert hasattr(module, "compute_bimanual_distance_gated_couple")
+
+    valid_couple = module.compute_bimanual_distance_gated_couple(
+        left_gate=torch.tensor([0.8, 0.4]),
+        right_gate=torch.tensor([0.2, 0.9]),
+        raw_couple=torch.tensor([0.7, 0.5]),
+    )
+
+    assert torch.allclose(valid_couple, torch.tensor([0.14, 0.20]))
+
+
 def test_box_carry_task_uses_ground_cube_far_goal_and_no_platforms():
     assets_source = _read(HBC_ROOT / "assets/objects.py")
     scenes_source = _read(MDP_ROOT / "scenes.py")
@@ -162,12 +175,12 @@ def test_box_carry_uses_bimanual_contact_label_and_removes_gripper_close_shaping
     assert "self.bimanual_support_contact = progress.support_density" in env_source
     assert "self.bimanual_contact_gate = progress.couple_gate" in env_source
     assert "self.c_grasp = update_ema(self.c_grasp, progress.support_density" in env_source
-    assert "self.c_couple = update_ema(self.c_couple, progress.couple_gate" in env_source
+    assert "self.c_couple = update_ema(self.c_couple, self.distance_gated_couple" in env_source
     assert "gripper_close" not in rewards_source
     assert "gated_gripper_close" not in rewards_source
     assert "early_close" not in rewards_source
-    assert "left_support=env.left_support_contact" in rewards_source
-    assert "right_support=env.right_support_contact" in rewards_source
+    assert "left_support=progress.left_support" in env_source
+    assert "right_support=progress.right_support" in env_source
     assert "return 0.7 * progress + 0.3" in rewards_source
     assert "0.3 * env.c_couple" not in rewards_source
 
@@ -178,10 +191,14 @@ def test_box_carry_gates_support_per_hand_and_penalizes_object_leg_contact():
     cfg_source = _read(CONFIG_ROOT / "box_env_cfg.py")
     rewards_source = _read(MDP_ROOT / "rewards.py")
 
-    assert "compute_independent_support_reward_terms" in rewards_source
-    assert "distance_scale=0.15" in rewards_source
-    assert "+ 0.65 * gated_support" in rewards_source
-    assert "- 0.15 * early_contact" in rewards_source
+    assert "compute_independent_support_reward_terms" in env_source
+    assert "distance_scale=0.15" in env_source
+    assert "0.5 * both_near" in rewards_source
+    assert "+ 0.5 * env.gated_support" in rewards_source
+    assert "- 0.25 * env.early_contact" in rewards_source
+    assert "compute_bimanual_distance_gated_couple" in env_source
+    assert "self.distance_gated_couple" in env_source
+    assert "self.c_couple = update_ema(self.c_couple, self.distance_gated_couple" in env_source
     assert "object_leg_contact_penalty = RewTerm" in rewards_source
     assert "weight=-1.0" in rewards_source
     assert 'prim_path="{ENV_REGEX_NS}/object"' in scenes_source

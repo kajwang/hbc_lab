@@ -14,8 +14,6 @@ from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.mdp.rewards import (
     task_success_reward,
 )
 
-from .contact_progress import compute_independent_support_reward_terms
-
 
 def approach_reward(env) -> torch.Tensor:
     left_near = torch.exp(-env.left_hand_object_distance / 0.5)
@@ -25,18 +23,7 @@ def approach_reward(env) -> torch.Tensor:
 
 def couple_reward(env) -> torch.Tensor:
     both_near = 1.0 - torch.tanh(env.d_active_hand / 0.5)
-    left_gate, right_gate, gated_support, early_contact = compute_independent_support_reward_terms(
-        left_distance=env.left_hand_object_distance,
-        right_distance=env.right_hand_object_distance,
-        left_support=env.left_support_contact,
-        right_support=env.right_support_contact,
-        distance_scale=0.15,
-    )
-    env._box_left_support_gate = left_gate.detach()
-    env._box_right_support_gate = right_gate.detach()
-    env._box_gated_support = gated_support.detach()
-    env._box_early_contact = early_contact.detach()
-    return 0.35 * both_near + 0.65 * gated_support - 0.15 * early_contact
+    return 0.5 * both_near + 0.5 * env.gated_support - 0.25 * env.early_contact
 
 
 def object_leg_contact_penalty(env) -> torch.Tensor:
