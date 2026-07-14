@@ -44,8 +44,10 @@ def couple_reward(env) -> torch.Tensor:
     early_close_penalty2 = gripper_close * (1.0 - grasp_window)
     env._couple_grasp_window = grasp_window.detach()
     env._couple_pad_gate = pad_gate.detach()
-    env._couple_gated_gripper_close = (gated_gripper_close1 + gated_gripper_close2).detach()
-    env._couple_early_close_penalty = (early_close_penalty1 + early_close_penalty2).detach()
+    env._couple_pad_gated_gripper_close = gated_gripper_close1.detach()
+    env._couple_pad_early_close_penalty = early_close_penalty1.detach()
+    env._couple_gated_gripper_close = gated_gripper_close2.detach()
+    env._couple_early_close_penalty = early_close_penalty2.detach()
     return (
         0.4 * near
         + 0.1 * pad_gate

@@ -3,6 +3,40 @@ from __future__ import annotations
 import torch
 
 
+def balanced_active_hand_progress(
+    w_manip: torch.Tensor,
+    active_hand: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Return per-hand progress and the weaker present hand for curriculum updates."""
+    if w_manip.ndim != 1 or active_hand.shape != w_manip.shape:
+        raise ValueError(
+            f"Expected matching 1-D tensors, got w_manip={tuple(w_manip.shape)} "
+            f"and active_hand={tuple(active_hand.shape)}"
+        )
+    if w_manip.numel() == 0:
+        raise ValueError("Cannot compute curriculum progress from an empty batch")
+
+    active_hand = active_hand.to(device=w_manip.device)
+    left_mask = active_hand == 0
+    right_mask = active_hand == 1
+    left_count = left_mask.sum()
+    right_count = right_mask.sum()
+    total_mean = w_manip.mean()
+    left_mean = torch.where(
+        left_count > 0,
+        torch.sum(w_manip * left_mask) / left_count.clamp_min(1),
+        total_mean,
+    )
+    right_mean = torch.where(
+        right_count > 0,
+        torch.sum(w_manip * right_mask) / right_count.clamp_min(1),
+        total_mean,
+    )
+    both_hands_present = (left_count > 0) & (right_count > 0)
+    balanced = torch.where(both_hands_present, torch.minimum(left_mean, right_mean), total_mean)
+    return left_mean, right_mean, balanced
+
+
 def object_mass_curriculum_parameters(
     w_manip: torch.Tensor,
     *,

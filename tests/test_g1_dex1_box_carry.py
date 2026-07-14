@@ -100,6 +100,25 @@ def test_bimanual_support_separates_contact_gate_from_support_density():
     assert torch.allclose(progress.support_density, torch.tensor([4.0 / 15.0, 0.15]))
 
 
+def test_bimanual_support_reward_gates_each_hand_by_its_own_distance():
+    module = _load_contact_progress_module()
+    assert hasattr(module, "compute_independent_support_reward_terms")
+
+    left_gate, right_gate, gated_support, early_contact = module.compute_independent_support_reward_terms(
+        left_distance=torch.tensor([0.0]),
+        right_distance=torch.tensor([0.15]),
+        left_support=torch.tensor([0.8]),
+        right_support=torch.tensor([0.6]),
+        distance_scale=0.15,
+    )
+    expected_right_gate = 1.0 - torch.tanh(torch.tensor([1.0]))
+
+    assert torch.allclose(left_gate, torch.ones(1))
+    assert torch.allclose(right_gate, expected_right_gate)
+    assert torch.allclose(gated_support, 0.5 * (0.8 + 0.6 * expected_right_gate))
+    assert torch.allclose(early_contact, 0.5 * 0.6 * (1.0 - expected_right_gate))
+
+
 def test_box_carry_task_uses_ground_cube_far_goal_and_no_platforms():
     assets_source = _read(HBC_ROOT / "assets/objects.py")
     scenes_source = _read(MDP_ROOT / "scenes.py")
@@ -147,9 +166,33 @@ def test_box_carry_uses_bimanual_contact_label_and_removes_gripper_close_shaping
     assert "gripper_close" not in rewards_source
     assert "gated_gripper_close" not in rewards_source
     assert "early_close" not in rewards_source
-    assert "env.bimanual_support_contact" in rewards_source
+    assert "left_support=env.left_support_contact" in rewards_source
+    assert "right_support=env.right_support_contact" in rewards_source
     assert "return 0.7 * progress + 0.3" in rewards_source
     assert "0.3 * env.c_couple" not in rewards_source
+
+
+def test_box_carry_gates_support_per_hand_and_penalizes_object_leg_contact():
+    scenes_source = _read(MDP_ROOT / "scenes.py")
+    env_source = _read(CONFIG_ROOT / "box_env.py")
+    cfg_source = _read(CONFIG_ROOT / "box_env_cfg.py")
+    rewards_source = _read(MDP_ROOT / "rewards.py")
+
+    assert "compute_independent_support_reward_terms" in rewards_source
+    assert "distance_scale=0.15" in rewards_source
+    assert "+ 0.65 * gated_support" in rewards_source
+    assert "- 0.15 * early_contact" in rewards_source
+    assert "object_leg_contact_penalty = RewTerm" in rewards_source
+    assert "weight=-1.0" in rewards_source
+    assert 'prim_path="{ENV_REGEX_NS}/object"' in scenes_source
+    assert "BOX_FORBIDDEN_LEG_BODY_NAMES" in scenes_source
+    assert '"left_knee_link"' in scenes_source
+    assert '"right_ankle_roll_link"' in scenes_source
+    assert "filter_prim_paths_expr=[" in scenes_source
+    assert "self._step_object_leg_contact" in env_source
+    assert 'self.scene.sensors[OBJECT_LEG_CONTACT_SENSOR_NAME].data.force_matrix_w' in env_source
+    assert '"BoxCarry/object_leg_contact_mean"' in env_source
+    assert "object_leg_contact_force_threshold: float = 10.0" in cfg_source
 
 
 def test_box_carry_has_independent_registration_agent_and_launch_entries():
@@ -219,3 +262,10 @@ def test_box_carry_visualizes_and_logs_assigned_face_targets():
     assert '"BoxCarry/left_face_target_error"' in env_source
     assert '"BoxCarry/right_face_target_error"' in env_source
     assert '"BoxCarry/left_positive_assignment_ratio"' in env_source
+
+
+def test_box_carry_forwards_pre_reset_active_hand_to_base_contact_logging():
+    env_source = _read(CONFIG_ROOT / "box_env.py")
+
+    assert "def _log_link_contact_diagnostics(self, active_hand: torch.Tensor | None = None)" in env_source
+    assert "super()._log_link_contact_diagnostics(active_hand)" in env_source

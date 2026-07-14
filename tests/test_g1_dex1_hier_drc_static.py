@@ -182,6 +182,23 @@ def test_g1_dex1_records_all_gripper_link_contact_diagnostics():
     assert "ContactLink/active_{link_name}_force" in env_source
 
 
+def test_g1_dex1_logs_success_before_successful_envs_are_reset():
+    env_source = _read(CONFIG_ROOT / "g1_dex1_env.py")
+    step_source = env_source.split("    def step(", maxsplit=1)[1]
+
+    assert "step_success_count = self.task_succeeded.sum().float().detach()" in step_source
+    assert 'self.extras["log"]["Task/success_count"] = step_success_count' in step_source
+
+
+def test_g1_dex1_logs_active_link_contact_with_pre_reset_active_hand():
+    env_source = _read(CONFIG_ROOT / "g1_dex1_env.py")
+    step_source = env_source.split("    def step(", maxsplit=1)[1]
+
+    assert "step_active_hand = self.active_hand.clone()" in step_source
+    assert '(step_active_hand == 0).float().mean()' in step_source
+    assert "self._log_link_contact_diagnostics(step_active_hand)" in step_source
+
+
 def test_g1_dex1_high_level_wrist_commands_keep_workspace_as_diagnostics_only():
     action_source = _read(MDP_ROOT / "high_level_actions.py")
 

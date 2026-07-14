@@ -16,7 +16,7 @@ from ..mdp.face_targets import (
     compute_long_axis_face_centers,
     select_assigned_face_targets,
 )
-from ..mdp.scenes import BOX_SUPPORT_CONTACT_KEYS, HAND_CENTER_FRAME_NAME
+from ..mdp.scenes import BOX_SUPPORT_CONTACT_KEYS, HAND_CENTER_FRAME_NAME, OBJECT_LEG_CONTACT_SENSOR_NAME
 
 
 LEFT_FACE_TARGET_MARKER_CFG = VisualizationMarkersCfg(
@@ -49,6 +49,8 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         self.right_support_contact = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.bimanual_support_contact = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.bimanual_contact_gate = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
+        self.object_leg_contact = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
+        self.object_leg_contact_force = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.box_lift_height = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.left_face_target_pos_w = torch.zeros(cfg.scene.num_envs, 3, device=cfg.sim.device)
         self.right_face_target_pos_w = torch.zeros(cfg.scene.num_envs, 3, device=cfg.sim.device)
@@ -71,6 +73,8 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         for side in ("left", "right"):
             self._step_link_contact[f"{side}_palm"] = torch.zeros(self.num_envs, device=self.device)
             self._step_link_force[f"{side}_palm"] = torch.zeros(self.num_envs, device=self.device)
+        self._step_object_leg_contact = torch.zeros(self.num_envs, device=self.device)
+        self._step_object_leg_force = torch.zeros(self.num_envs, device=self.device)
 
     def _accumulate_contact_components(self) -> None:
         self._accumulate_link_contact_diagnostics()
@@ -80,6 +84,16 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
             key = f"{side}_palm"
             self._step_link_contact[key] = torch.maximum(self._step_link_contact[key], contact)
             self._step_link_force[key] = torch.maximum(self._step_link_force[key], force)
+
+        force_matrix_w = self.scene.sensors[OBJECT_LEG_CONTACT_SENSOR_NAME].data.force_matrix_w
+        if force_matrix_w is None:
+            raise RuntimeError("Object-leg contact sensor must provide filtered contact forces")
+        leg_force = torch.linalg.vector_norm(force_matrix_w, dim=-1)
+        while leg_force.ndim > 1:
+            leg_force = torch.amax(leg_force, dim=-1)
+        leg_contact = 1.0 - torch.exp(-leg_force / self.cfg.object_leg_contact_force_threshold)
+        self._step_object_leg_contact = torch.maximum(self._step_object_leg_contact, leg_contact)
+        self._step_object_leg_force = torch.maximum(self._step_object_leg_force, leg_force)
 
     def _support_region_contacts(self, side: str) -> torch.Tensor:
         return torch.stack(
@@ -150,6 +164,8 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         self.right_support_contact = progress.right_support
         self.bimanual_support_contact = progress.support_density
         self.bimanual_contact_gate = progress.couple_gate
+        self.object_leg_contact.copy_(self._step_object_leg_contact)
+        self.object_leg_contact_force.copy_(self._step_object_leg_force)
         self.left_hand_contact = progress.left_contact_gate
         self.right_hand_contact = progress.right_contact_gate
         self._step_left_contact = progress.left_contact_gate
@@ -188,6 +204,8 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         self.right_support_contact[env_ids] = 0.0
         self.bimanual_support_contact[env_ids] = 0.0
         self.bimanual_contact_gate[env_ids] = 0.0
+        self.object_leg_contact[env_ids] = 0.0
+        self.object_leg_contact_force[env_ids] = 0.0
         self.box_lift_height[env_ids] = 0.0
         self.left_face_target_pos_w[env_ids] = 0.0
         self.right_face_target_pos_w[env_ids] = 0.0
@@ -207,8 +225,8 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         self.left_face_target_visualizer.visualize(self.left_face_target_pos_w)
         self.right_face_target_visualizer.visualize(self.right_face_target_pos_w)
 
-    def _log_link_contact_diagnostics(self) -> None:
-        super()._log_link_contact_diagnostics()
+    def _log_link_contact_diagnostics(self, active_hand: torch.Tensor | None = None) -> None:
+        super()._log_link_contact_diagnostics(active_hand)
         for side in ("left", "right"):
             self.extras["log"][f"ContactLink/{side}_palm_mean"] = self._step_link_contact[
                 f"{side}_palm"
@@ -219,6 +237,16 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         self.extras["log"]["BoxCarry/bimanual_support_mean"] = self.bimanual_support_contact.mean()
         self.extras["log"]["BoxCarry/support_density_mean"] = self.bimanual_support_contact.mean()
         self.extras["log"]["BoxCarry/couple_gate_mean"] = self.bimanual_contact_gate.mean()
+        self.extras["log"]["BoxCarry/object_leg_contact_mean"] = self.object_leg_contact.mean()
+        self.extras["log"]["BoxCarry/object_leg_contact_force"] = self.object_leg_contact_force.mean()
+        for attr_name, log_name in (
+            ("_box_left_support_gate", "BoxCarry/left_support_distance_gate"),
+            ("_box_right_support_gate", "BoxCarry/right_support_distance_gate"),
+            ("_box_gated_support", "BoxCarry/gated_support_mean"),
+            ("_box_early_contact", "BoxCarry/early_contact_mean"),
+        ):
+            if hasattr(self, attr_name):
+                self.extras["log"][log_name] = getattr(self, attr_name).mean()
         self.extras["log"]["BoxCarry/left_face_target_error"] = self.left_hand_object_distance.mean()
         self.extras["log"]["BoxCarry/right_face_target_error"] = self.right_hand_object_distance.mean()
         self.extras["log"]["BoxCarry/left_positive_assignment_ratio"] = (

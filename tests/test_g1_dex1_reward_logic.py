@@ -25,6 +25,10 @@ def test_dex1_couple_reward_uses_grasp_window_and_inner_pad_contact_gates():
     assert "early_close_penalty1 = gripper_close * (1.0 - pad_gate)" in reward_source
     assert "gated_gripper_close2 = gripper_close * grasp_window" in reward_source
     assert "early_close_penalty2 = gripper_close * (1.0 - grasp_window)" in reward_source
+    assert "env._couple_pad_gated_gripper_close = gated_gripper_close1.detach()" in reward_source
+    assert "env._couple_pad_early_close_penalty = early_close_penalty1.detach()" in reward_source
+    assert "env._couple_gated_gripper_close = gated_gripper_close2.detach()" in reward_source
+    assert "env._couple_early_close_penalty = early_close_penalty2.detach()" in reward_source
 
 
 def test_dex1_couple_reward_restores_pre_approach_only_weights():

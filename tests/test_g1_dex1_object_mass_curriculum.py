@@ -1,4 +1,10 @@
+import importlib.util
+import sys
 from pathlib import Path
+
+import pytest
+
+torch = pytest.importorskip("torch")
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +30,41 @@ OBJECTS_PATH = REPO_ROOT / "source/hbc_lab/hbc_lab/assets/objects.py"
 
 def _read(path: Path) -> str:
     return path.read_text()
+
+
+def _load_mass_curriculum_module():
+    spec = importlib.util.spec_from_file_location("g1_dex1_object_mass_curriculum_under_test", MODULE_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_balanced_active_hand_progress_uses_weaker_hand_for_mixed_training():
+    module = _load_mass_curriculum_module()
+
+    left_mean, right_mean, balanced = module.balanced_active_hand_progress(
+        torch.tensor([0.8, 0.6, 0.1, 0.2]),
+        torch.tensor([0, 0, 1, 1]),
+    )
+
+    assert torch.allclose(left_mean, torch.tensor(0.7))
+    assert torch.allclose(right_mean, torch.tensor(0.15))
+    assert torch.allclose(balanced, torch.tensor(0.15))
+
+
+def test_balanced_active_hand_progress_preserves_single_hand_curriculum():
+    module = _load_mass_curriculum_module()
+
+    left_mean, right_mean, balanced = module.balanced_active_hand_progress(
+        torch.tensor([0.8, 0.6]),
+        torch.tensor([1, 1]),
+    )
+
+    assert torch.allclose(left_mean, torch.tensor(0.7))
+    assert torch.allclose(right_mean, torch.tensor(0.7))
+    assert torch.allclose(balanced, torch.tensor(0.7))
 
 
 def test_object_mass_curriculum_defines_single_expression_log_schedule():
@@ -74,6 +115,14 @@ def test_g1_dex1_reset_object_applies_mass_curriculum_to_physx_masses():
     assert "self.object_mass_curriculum_level" in env_source
     assert "DRC/object_mass_curriculum_level" in env_source
     assert "DRC/object_mass_mean" in env_source
+    assert "balanced_active_hand_progress" in env_source
+    assert "DRC/object_mass_w_manip_left_mean" in env_source
+    assert "DRC/object_mass_w_manip_right_mean" in env_source
+    assert "DRC/object_mass_w_manip_balanced" in env_source
+    update_source = env_source.split("    def _update_object_mass_curriculum", maxsplit=1)[1].split(
+        "    def _check_success", maxsplit=1
+    )[0]
+    assert "self.W_manip.detach().mean()" not in update_source
     assert "sample_object_masses" in events_source
     assert "env.object_mass_curriculum_level" in events_source
     assert "anchor_w=env.cfg.object_mass_anchor_w" in events_source

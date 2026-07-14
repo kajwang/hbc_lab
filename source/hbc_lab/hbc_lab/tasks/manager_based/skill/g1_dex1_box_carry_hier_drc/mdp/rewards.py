@@ -14,6 +14,8 @@ from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.mdp.rewards import (
     task_success_reward,
 )
 
+from .contact_progress import compute_independent_support_reward_terms
+
 
 def approach_reward(env) -> torch.Tensor:
     left_near = torch.exp(-env.left_hand_object_distance / 0.5)
@@ -23,7 +25,22 @@ def approach_reward(env) -> torch.Tensor:
 
 def couple_reward(env) -> torch.Tensor:
     both_near = 1.0 - torch.tanh(env.d_active_hand / 0.5)
-    return 0.35 * both_near + 0.65 * env.bimanual_support_contact
+    left_gate, right_gate, gated_support, early_contact = compute_independent_support_reward_terms(
+        left_distance=env.left_hand_object_distance,
+        right_distance=env.right_hand_object_distance,
+        left_support=env.left_support_contact,
+        right_support=env.right_support_contact,
+        distance_scale=0.15,
+    )
+    env._box_left_support_gate = left_gate.detach()
+    env._box_right_support_gate = right_gate.detach()
+    env._box_gated_support = gated_support.detach()
+    env._box_early_contact = early_contact.detach()
+    return 0.35 * both_near + 0.65 * gated_support - 0.15 * early_contact
+
+
+def object_leg_contact_penalty(env) -> torch.Tensor:
+    return env.object_leg_contact
 
 
 def manip_reward(env) -> torch.Tensor:
@@ -56,6 +73,7 @@ class G1Dex1BoxCarryRewardsCfg:
     drc_total = RewTerm(func=hier_drc_reward, weight=1.0)
     task_success = RewTerm(func=task_success_reward, weight=1.0)
     object_fall = RewTerm(func=object_fall_penalty, weight=-2.0)
+    object_leg_contact_penalty = RewTerm(func=object_leg_contact_penalty, weight=-1.0)
     command_smoothness = RewTerm(func=command_smoothness, weight=-0.02)
     root_object_facing = RewTerm(func=root_object_facing_reward, weight=2.0)
     both_hand_center_tracking_error_penalty = RewTerm(

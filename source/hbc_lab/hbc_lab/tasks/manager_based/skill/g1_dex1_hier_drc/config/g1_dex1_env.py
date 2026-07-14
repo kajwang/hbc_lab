@@ -18,6 +18,7 @@ from ..mdp.gripper import Dex1GripperController
 from ..mdp.high_level_actions import HighLevelActionLimits, HighLevelCommandState, decode_high_level_action
 from ..mdp.low_level_observations import G1SphericalPostureLowLevelObsBuilder
 from ..mdp.low_level_policy import LowLevelPolicyWrapper
+from ..mdp.object_mass_curriculum import balanced_active_hand_progress
 from ..mdp.scenes import (
     DEX1_LINK_CONTACT_SENSOR_NAMES,
     HAND_CENTER_FRAME_NAME,
@@ -87,6 +88,9 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         )
         self.object_mass_w_manip_ema = torch.full((), cfg.object_mass_start_w, device=cfg.sim.device)
         self.object_mass_curriculum_level = torch.full((), cfg.object_mass_start_w, device=cfg.sim.device)
+        self.object_mass_w_manip_left_mean = torch.full((), cfg.object_mass_start_w, device=cfg.sim.device)
+        self.object_mass_w_manip_right_mean = torch.full((), cfg.object_mass_start_w, device=cfg.sim.device)
+        self.object_mass_w_manip_balanced = torch.full((), cfg.object_mass_start_w, device=cfg.sim.device)
         self.success_proximity_count = torch.zeros(cfg.scene.num_envs, dtype=torch.long, device=cfg.sim.device)
         self.task_succeeded = torch.zeros(cfg.scene.num_envs, dtype=torch.bool, device=cfg.sim.device)
         self.last_high_level_action = torch.zeros(cfg.scene.num_envs, cfg.action_dim, device=cfg.sim.device)
@@ -353,13 +357,14 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
             self.extras["log"]["HL/left_gripper_target_buffer_mean"] = robot.data.joint_pos_target[:, left_ids].mean()
             self.extras["log"]["HL/right_gripper_target_buffer_mean"] = robot.data.joint_pos_target[:, right_ids].mean()
 
-    def _log_link_contact_diagnostics(self) -> None:
+    def _log_link_contact_diagnostics(self, active_hand: torch.Tensor | None = None) -> None:
         for side, link_name, _ in DEX1_LINK_CONTACT_SENSOR_NAMES:
             key = f"{side}_{link_name}"
             self.extras["log"][f"ContactLink/{key}_mean"] = self._step_link_contact[key].mean()
             self.extras["log"][f"ContactLink/{key}_force"] = self._step_link_force[key].mean()
 
-        left_active = self.active_hand == 0
+        active_hand = self.active_hand if active_hand is None else active_hand
+        left_active = active_hand == 0
         for link_name in ("Link1_2", "Link1_3", "Link2_2", "Link2_3"):
             left_key = f"left_{link_name}"
             right_key = f"right_{link_name}"
@@ -419,8 +424,14 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         if not getattr(self.cfg, "object_mass_curriculum_enabled", False):
             return
         alpha = self.cfg.object_mass_w_manip_ema_alpha
-        w_manip_mean = self.W_manip.detach().mean()
-        self.object_mass_w_manip_ema = (1.0 - alpha) * self.object_mass_w_manip_ema + alpha * w_manip_mean
+        left_mean, right_mean, balanced = balanced_active_hand_progress(
+            self.W_manip.detach(),
+            self.active_hand,
+        )
+        self.object_mass_w_manip_left_mean.copy_(left_mean)
+        self.object_mass_w_manip_right_mean.copy_(right_mean)
+        self.object_mass_w_manip_balanced.copy_(balanced)
+        self.object_mass_w_manip_ema = (1.0 - alpha) * self.object_mass_w_manip_ema + alpha * balanced
         self.object_mass_curriculum_level = torch.maximum(
             self.object_mass_curriculum_level,
             self.object_mass_w_manip_ema,
@@ -538,6 +549,8 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self.common_step_counter += 1
         self._compute_progress()
         self._check_success()
+        step_success_count = self.task_succeeded.sum().float().detach()
+        step_active_hand = self.active_hand.clone()
 
         self.reset_buf = self.termination_manager.compute()
         self.reset_terminated = self.termination_manager.terminated | self.task_succeeded
@@ -569,12 +582,15 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self.extras["log"]["DRC/object_fall_mean"] = self.object_fallen.float().mean()
         self.extras["log"]["DRC/object_mass_curriculum_level"] = self.object_mass_curriculum_level
         self.extras["log"]["DRC/object_mass_mean"] = self.object_mass.mean()
+        self.extras["log"]["DRC/object_mass_w_manip_left_mean"] = self.object_mass_w_manip_left_mean
+        self.extras["log"]["DRC/object_mass_w_manip_right_mean"] = self.object_mass_w_manip_right_mean
+        self.extras["log"]["DRC/object_mass_w_manip_balanced"] = self.object_mass_w_manip_balanced
         self.extras["log"]["DRC/W_app_mean"] = self.W_app.mean()
         self.extras["log"]["DRC/W_couple_mean"] = self.W_couple.mean()
         self.extras["log"]["DRC/W_manip_mean"] = self.W_manip.mean()
         self.extras["log"]["Contact/left_hand_mean"] = self.left_hand_contact.mean()
         self.extras["log"]["Contact/right_hand_mean"] = self.right_hand_contact.mean()
-        self.extras["log"]["Contact/active_left_ratio"] = (self.active_hand == 0).float().mean()
+        self.extras["log"]["Contact/active_left_ratio"] = (step_active_hand == 0).float().mean()
         self.extras["log"]["Contact/active_left_finger_mean"] = self.active_left_finger_contact.mean()
         self.extras["log"]["Contact/active_right_finger_mean"] = self.active_right_finger_contact.mean()
         self.extras["log"]["Contact/active_left_finger_force"] = self.active_left_finger_force.mean()
@@ -585,16 +601,18 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         for attr_name, log_name in (
             ("_couple_grasp_window", "Couple/grasp_window_mean"),
             ("_couple_pad_gate", "Couple/pad_gate_mean"),
+            ("_couple_pad_gated_gripper_close", "Couple/pad_gated_gripper_close_mean"),
+            ("_couple_pad_early_close_penalty", "Couple/pad_early_close_penalty_mean"),
             ("_couple_gated_gripper_close", "Couple/gated_gripper_close_mean"),
             ("_couple_early_close_penalty", "Couple/early_close_penalty_mean"),
         ):
             if hasattr(self, attr_name):
                 self.extras["log"][log_name] = getattr(self, attr_name).mean()
-        self._log_link_contact_diagnostics()
+        self._log_link_contact_diagnostics(step_active_hand)
         self.extras["log"]["HL/left_grip_mean"] = self.command_state.left_grip.mean()
         self.extras["log"]["HL/right_grip_mean"] = self.command_state.right_grip.mean()
         self.extras["log"]["HL/action_saturation_ratio"] = self._high_level_action_saturation_ratio
         self.extras["log"]["HL/action_abs_mean"] = self._high_level_action_abs_mean
         self._log_high_level_diagnostics()
-        self.extras["log"]["Task/success_count"] = self.task_succeeded.sum().float()
+        self.extras["log"]["Task/success_count"] = step_success_count
         return self.obs_buf, self.reward_buf, self.reset_terminated, self.reset_time_outs, self.extras

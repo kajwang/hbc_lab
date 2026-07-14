@@ -18,6 +18,26 @@ class BimanualSupportProgress:
     support_density: torch.Tensor
 
 
+def compute_independent_support_reward_terms(
+    left_distance: torch.Tensor,
+    right_distance: torch.Tensor,
+    left_support: torch.Tensor,
+    right_support: torch.Tensor,
+    distance_scale: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Gate each hand's support using its own distance to the assigned box face."""
+    if distance_scale <= 0.0:
+        raise ValueError(f"distance_scale must be positive, got {distance_scale}")
+    if not (left_distance.shape == right_distance.shape == left_support.shape == right_support.shape):
+        raise ValueError("distance and support tensors must have identical shapes")
+
+    left_gate = 1.0 - torch.tanh(left_distance / distance_scale)
+    right_gate = 1.0 - torch.tanh(right_distance / distance_scale)
+    gated_support = 0.5 * (left_gate * left_support + right_gate * right_support)
+    early_contact = 0.5 * ((1.0 - left_gate) * left_support + (1.0 - right_gate) * right_support)
+    return left_gate, right_gate, gated_support, early_contact
+
+
 def compute_bimanual_support_progress(
     left_distance: torch.Tensor,
     right_distance: torch.Tensor,
