@@ -6,12 +6,10 @@ from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.config.g1_dex1_env_cfg i
 from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.mdp.contact_labels import ContactMode
 
 from ..mdp.events import G1Dex1BoxCarryEventCfg
-from ..mdp.observations import box_object_goal_hand_obs
 from ..mdp.rewards import G1Dex1BoxCarryRewardsCfg
 from ..mdp.scenes import (
     BOX_PALM_CONTACT_SENSOR_NAMES,
     G1Dex1BoxCarrySceneCfg,
-    OBJECT_LEG_CONTACT_SENSOR_NAME,
 )
 
 
@@ -29,15 +27,11 @@ class G1Dex1BoxCarryEnvCfg(G1Dex1HierDrcEnvCfg):
     object_mass_min: float = 0.5
     object_mass_max: float = 15.0
     success_distance: float = 0.20
-    object_leg_contact_force_threshold: float = 10.0
 
     def __post_init__(self):
         super().__post_init__()
         self.episode_length_s = 30.0
-        self.observations.policy.task.func = box_object_goal_hand_obs
-        self.observations.critic.task.func = box_object_goal_hand_obs
         self.commands.high_level.fixed_effector_mask = (1.0, 1.0)
         self.commands.high_level.contact_mode = int(ContactMode.BIMANUAL_BOX_SUPPORT)
         for sensor_name in BOX_PALM_CONTACT_SENSOR_NAMES:
             getattr(self.scene, sensor_name).update_period = self.sim.dt
-        getattr(self.scene, OBJECT_LEG_CONTACT_SENSOR_NAME).update_period = self.sim.dt

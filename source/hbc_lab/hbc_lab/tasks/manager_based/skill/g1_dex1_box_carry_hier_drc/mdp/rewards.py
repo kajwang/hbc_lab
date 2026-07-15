@@ -23,11 +23,13 @@ def approach_reward(env) -> torch.Tensor:
 
 def couple_reward(env) -> torch.Tensor:
     both_near = 1.0 - torch.tanh(env.d_active_hand / 0.5)
-    return 0.5 * both_near + 0.5 * env.gated_support - 0.25 * env.early_contact
-
-
-def object_leg_contact_penalty(env) -> torch.Tensor:
-    return env.object_leg_contact
+    position_couple = both_near * env.bimanual_position_relation
+    return (
+        0.4 * both_near
+        + 0.3 * position_couple
+        + 0.3 * env.gated_support
+        - 0.25 * env.early_contact
+    )
 
 
 def manip_reward(env) -> torch.Tensor:
@@ -60,7 +62,6 @@ class G1Dex1BoxCarryRewardsCfg:
     drc_total = RewTerm(func=hier_drc_reward, weight=1.0)
     task_success = RewTerm(func=task_success_reward, weight=1.0)
     object_fall = RewTerm(func=object_fall_penalty, weight=-2.0)
-    object_leg_contact_penalty = RewTerm(func=object_leg_contact_penalty, weight=-1.0)
     command_smoothness = RewTerm(func=command_smoothness, weight=-0.02)
     root_object_facing = RewTerm(func=root_object_facing_reward, weight=2.0)
     both_hand_center_tracking_error_penalty = RewTerm(

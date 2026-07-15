@@ -15,24 +15,9 @@ from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.mdp.scenes import (
 
 
 BOX_PALM_CONTACT_SENSOR_NAMES = ("left_palm_contact", "right_palm_contact")
-OBJECT_LEG_CONTACT_SENSOR_NAME = "object_leg_contact"
 BOX_SUPPORT_CONTACT_KEYS = (
     "Link1_2",
     "Link2_2",
-)
-BOX_FORBIDDEN_LEG_BODY_NAMES = (
-    "left_hip_pitch_link",
-    "left_hip_roll_link",
-    "left_hip_yaw_link",
-    "left_knee_link",
-    "left_ankle_pitch_link",
-    "left_ankle_roll_link",
-    "right_hip_pitch_link",
-    "right_hip_roll_link",
-    "right_hip_yaw_link",
-    "right_knee_link",
-    "right_ankle_pitch_link",
-    "right_ankle_roll_link",
 )
 
 BOX_OBJECT_FRAME_MARKER_CFG = FRAME_MARKER_CFG.replace(
@@ -69,12 +54,4 @@ class G1Dex1BoxCarrySceneCfg(G1Dex1HierDrcSceneCfg):
         history_length=3,
         track_air_time=False,
         filter_prim_paths_expr=OBJECT_CONTACT_FILTER,
-    )
-    object_leg_contact = ContactSensorCfg(
-        prim_path="{ENV_REGEX_NS}/object",
-        history_length=0,
-        track_air_time=False,
-        filter_prim_paths_expr=[
-            f"{{ENV_REGEX_NS}}/Robot/{body_name}" for body_name in BOX_FORBIDDEN_LEG_BODY_NAMES
-        ],
     )

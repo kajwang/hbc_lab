@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import torch
-import isaaclab.sim as sim_utils
-from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
 
 from hbc_lab.assets.objects import BOX_CUBE_CENTER_Z, BOX_CUBE_SIZE
 from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.config.g1_dex1_env import (
@@ -12,39 +10,18 @@ from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.mdp.drc_math import comp
 
 from ..mdp.contact_progress import (
     compute_bimanual_distance_gated_couple,
+    compute_bimanual_position_relation,
     compute_bimanual_support_progress,
     compute_independent_support_reward_terms,
 )
-from ..mdp.face_targets import (
-    choose_left_positive_assignment,
-    compute_long_axis_face_centers,
-    select_assigned_face_targets,
-)
-from ..mdp.scenes import BOX_SUPPORT_CONTACT_KEYS, HAND_CENTER_FRAME_NAME, OBJECT_LEG_CONTACT_SENSOR_NAME
+from ..mdp.scenes import BOX_SUPPORT_CONTACT_KEYS, HAND_CENTER_FRAME_NAME
 
 
-LEFT_FACE_TARGET_MARKER_CFG = VisualizationMarkersCfg(
-    prim_path="/Visuals/G1Dex1BoxCarry/left_face_target",
-    markers={
-        "target": sim_utils.SphereCfg(
-            radius=0.035,
-            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.1, 0.35, 1.0)),
-        ),
-    },
-)
-RIGHT_FACE_TARGET_MARKER_CFG = VisualizationMarkersCfg(
-    prim_path="/Visuals/G1Dex1BoxCarry/right_face_target",
-    markers={
-        "target": sim_utils.SphereCfg(
-            radius=0.035,
-            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(1.0, 0.55, 0.05)),
-        ),
-    },
-)
+BOX_GRASP_RADIUS = 0.5 * max(BOX_CUBE_SIZE)
 
 
 class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
-    """Bimanual ground-box transport guided by opposing face centers."""
+    """Bimanual ground-box transport guided by an axis-free opposing grasp."""
 
     def __init__(self, cfg, render_mode: str | None = None, **kwargs):
         self.left_hand_object_distance = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
@@ -59,23 +36,10 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         self.distance_gated_couple = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.gated_support = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.early_contact = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
-        self.object_leg_contact = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
-        self.object_leg_contact_force = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
+        self.bimanual_position_opposition = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
+        self.bimanual_radial_balance = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
+        self.bimanual_position_relation = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.box_lift_height = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
-        self.left_face_target_pos_w = torch.zeros(cfg.scene.num_envs, 3, device=cfg.sim.device)
-        self.right_face_target_pos_w = torch.zeros(cfg.scene.num_envs, 3, device=cfg.sim.device)
-        self.left_face_uses_positive = torch.zeros(
-            cfg.scene.num_envs,
-            dtype=torch.bool,
-            device=cfg.sim.device,
-        )
-        self.face_assignment_pending = torch.ones(
-            cfg.scene.num_envs,
-            dtype=torch.bool,
-            device=cfg.sim.device,
-        )
-        self.left_face_target_visualizer = None
-        self.right_face_target_visualizer = None
         super().__init__(cfg, render_mode, **kwargs)
 
     def _reset_contact_accumulators(self) -> None:
@@ -83,8 +47,6 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         for side in ("left", "right"):
             self._step_link_contact[f"{side}_palm"] = torch.zeros(self.num_envs, device=self.device)
             self._step_link_force[f"{side}_palm"] = torch.zeros(self.num_envs, device=self.device)
-        self._step_object_leg_contact = torch.zeros(self.num_envs, device=self.device)
-        self._step_object_leg_force = torch.zeros(self.num_envs, device=self.device)
 
     def _accumulate_contact_components(self) -> None:
         self._accumulate_link_contact_diagnostics()
@@ -94,16 +56,6 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
             key = f"{side}_palm"
             self._step_link_contact[key] = torch.maximum(self._step_link_contact[key], contact)
             self._step_link_force[key] = torch.maximum(self._step_link_force[key], force)
-
-        force_matrix_w = self.scene.sensors[OBJECT_LEG_CONTACT_SENSOR_NAME].data.force_matrix_w
-        if force_matrix_w is None:
-            raise RuntimeError("Object-leg contact sensor must provide filtered contact forces")
-        leg_force = torch.linalg.vector_norm(force_matrix_w, dim=-1)
-        while leg_force.ndim > 1:
-            leg_force = torch.amax(leg_force, dim=-1)
-        leg_contact = 1.0 - torch.exp(-leg_force / self.cfg.object_leg_contact_force_threshold)
-        self._step_object_leg_contact = torch.maximum(self._step_object_leg_contact, leg_contact)
-        self._step_object_leg_force = torch.maximum(self._step_object_leg_force, leg_force)
 
     def _support_region_contacts(self, side: str) -> torch.Tensor:
         return torch.stack(
@@ -121,48 +73,20 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         object_root_z = self.scene["object"].data.root_pos_w[:, 2]
         return object_root_z < self.scene.env_origins[:, 2] - 0.02
 
-    def _update_face_targets(self) -> None:
-        obj = self.scene["object"]
-        positive_w, negative_w = compute_long_axis_face_centers(
-            obj.data.root_pos_w,
-            obj.data.root_quat_w,
-            half_extent=0.5 * BOX_CUBE_SIZE[0],
-        )
-        hand_center_pos_w = self.scene[HAND_CENTER_FRAME_NAME].data.target_pos_w
-        pending = self.face_assignment_pending
-        if torch.any(pending):
-            left_positive = choose_left_positive_assignment(
-                positive_w,
-                negative_w,
-                hand_center_pos_w[:, 0, :],
-                hand_center_pos_w[:, 1, :],
-            )
-            self.left_face_uses_positive[pending] = left_positive[pending]
-            self.face_assignment_pending[pending] = False
-
-        left_target_w, right_target_w = select_assigned_face_targets(
-            positive_w,
-            negative_w,
-            self.left_face_uses_positive,
-        )
-        self.left_face_target_pos_w.copy_(left_target_w)
-        self.right_face_target_pos_w.copy_(right_target_w)
-
     def _compute_progress(self):
-        self._update_face_targets()
         object_pos_w = self._object_frame_pos_w()
         hand_center_pos_w = self.scene[HAND_CENTER_FRAME_NAME].data.target_pos_w
-        left_distance = torch.norm(
-            hand_center_pos_w[:, 0, :] - self.left_face_target_pos_w,
-            dim=-1,
+        relation = compute_bimanual_position_relation(
+            object_pos=object_pos_w,
+            left_hand_pos=hand_center_pos_w[:, 0, :],
+            right_hand_pos=hand_center_pos_w[:, 1, :],
+            radial_balance_scale=0.10,
         )
-        right_distance = torch.norm(
-            hand_center_pos_w[:, 1, :] - self.right_face_target_pos_w,
-            dim=-1,
-        )
+        left_clearance = torch.clamp(relation.left_distance - BOX_GRASP_RADIUS, min=0.0)
+        right_clearance = torch.clamp(relation.right_distance - BOX_GRASP_RADIUS, min=0.0)
         progress = compute_bimanual_support_progress(
-            left_distance=left_distance,
-            right_distance=right_distance,
+            left_distance=left_clearance,
+            right_distance=right_clearance,
             left_region_contacts=self._support_region_contacts("left"),
             right_region_contacts=self._support_region_contacts("right"),
         )
@@ -186,18 +110,19 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         self.distance_gated_couple = compute_bimanual_distance_gated_couple(
             left_gate=self.left_support_distance_gate,
             right_gate=self.right_support_distance_gate,
-            raw_couple=progress.couple_gate,
+            raw_couple=progress.couple_gate * relation.score,
         )
 
-        self.left_hand_object_distance = progress.left_distance
-        self.right_hand_object_distance = progress.right_distance
+        self.left_hand_object_distance = relation.left_distance
+        self.right_hand_object_distance = relation.right_distance
         self.d_active_hand = progress.distance
+        self.bimanual_position_opposition = relation.opposition
+        self.bimanual_radial_balance = relation.radial_balance
+        self.bimanual_position_relation = relation.score
         self.left_support_contact = progress.left_support
         self.right_support_contact = progress.right_support
         self.bimanual_support_contact = progress.support_density
         self.bimanual_contact_gate = progress.couple_gate
-        self.object_leg_contact.copy_(self._step_object_leg_contact)
-        self.object_leg_contact_force.copy_(self._step_object_leg_force)
         self.left_hand_contact = progress.left_contact_gate
         self.right_hand_contact = progress.right_contact_gate
         self._step_left_contact = progress.left_contact_gate
@@ -214,8 +139,8 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         self.c_contact = update_ema(self.c_contact, progress.support_density, alpha=0.2)
         self.c_grasp = update_ema(self.c_grasp, progress.support_density, alpha=0.2)
         self.c_couple = update_ema(self.c_couple, self.distance_gated_couple, alpha=0.2)
+        self.c_opposition = update_ema(self.c_opposition, relation.score, alpha=0.2)
         zeros = torch.zeros_like(self.c_couple)
-        self.c_opposition = update_ema(self.c_opposition, zeros, alpha=0.2)
         self.c_pinch = update_ema(self.c_pinch, zeros, alpha=0.2)
         self.object_fallen = self._object_fallen()
         self.box_lift_height = self.scene["object"].data.root_pos_w[:, 2] - (
@@ -242,26 +167,10 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         self.distance_gated_couple[env_ids] = 0.0
         self.gated_support[env_ids] = 0.0
         self.early_contact[env_ids] = 0.0
-        self.object_leg_contact[env_ids] = 0.0
-        self.object_leg_contact_force[env_ids] = 0.0
+        self.bimanual_position_opposition[env_ids] = 0.0
+        self.bimanual_radial_balance[env_ids] = 0.0
+        self.bimanual_position_relation[env_ids] = 0.0
         self.box_lift_height[env_ids] = 0.0
-        self.left_face_target_pos_w[env_ids] = 0.0
-        self.right_face_target_pos_w[env_ids] = 0.0
-        self.left_face_uses_positive[env_ids] = False
-        self.face_assignment_pending[env_ids] = True
-
-    def _update_target_pose_visualization(self) -> None:
-        super()._update_target_pose_visualization()
-        if not getattr(self.cfg, "target_pose_debug_vis", False):
-            return
-        self._update_face_targets()
-        if self.left_face_target_visualizer is None:
-            self.left_face_target_visualizer = VisualizationMarkers(LEFT_FACE_TARGET_MARKER_CFG)
-            self.right_face_target_visualizer = VisualizationMarkers(RIGHT_FACE_TARGET_MARKER_CFG)
-            self.left_face_target_visualizer.set_visibility(True)
-            self.right_face_target_visualizer.set_visibility(True)
-        self.left_face_target_visualizer.visualize(self.left_face_target_pos_w)
-        self.right_face_target_visualizer.visualize(self.right_face_target_pos_w)
 
     def _log_link_contact_diagnostics(self, active_hand: torch.Tensor | None = None) -> None:
         super()._log_link_contact_diagnostics(active_hand)
@@ -277,8 +186,6 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         self.extras["log"]["BoxCarry/couple_gate_mean"] = self.bimanual_contact_gate.mean()
         self.extras["log"]["BoxCarry/bimanual_distance_gate_mean"] = self.bimanual_distance_gate.mean()
         self.extras["log"]["BoxCarry/distance_gated_couple_mean"] = self.distance_gated_couple.mean()
-        self.extras["log"]["BoxCarry/object_leg_contact_mean"] = self.object_leg_contact.mean()
-        self.extras["log"]["BoxCarry/object_leg_contact_force"] = self.object_leg_contact_force.mean()
         for value, log_name in (
             (self.left_support_distance_gate, "BoxCarry/left_support_distance_gate"),
             (self.right_support_distance_gate, "BoxCarry/right_support_distance_gate"),
@@ -286,11 +193,13 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
             (self.early_contact, "BoxCarry/early_contact_mean"),
         ):
             self.extras["log"][log_name] = value.mean()
-        self.extras["log"]["BoxCarry/left_face_target_error"] = self.left_hand_object_distance.mean()
-        self.extras["log"]["BoxCarry/right_face_target_error"] = self.right_hand_object_distance.mean()
-        self.extras["log"]["BoxCarry/left_positive_assignment_ratio"] = (
-            self.left_face_uses_positive.float().mean()
+        self.extras["log"]["BoxCarry/left_hand_center_distance"] = self.left_hand_object_distance.mean()
+        self.extras["log"]["BoxCarry/right_hand_center_distance"] = self.right_hand_object_distance.mean()
+        self.extras["log"]["BoxCarry/position_opposition_mean"] = (
+            self.bimanual_position_opposition.mean()
         )
+        self.extras["log"]["BoxCarry/radial_balance_mean"] = self.bimanual_radial_balance.mean()
+        self.extras["log"]["BoxCarry/position_relation_mean"] = self.bimanual_position_relation.mean()
         self.extras["log"]["BoxCarry/lift_height_mean"] = self.box_lift_height.mean()
         self.extras["log"]["BoxCarry/left_effector_required"] = self.contact_label.effector_mask[:, 0].mean()
         self.extras["log"]["BoxCarry/right_effector_required"] = self.contact_label.effector_mask[:, 1].mean()
