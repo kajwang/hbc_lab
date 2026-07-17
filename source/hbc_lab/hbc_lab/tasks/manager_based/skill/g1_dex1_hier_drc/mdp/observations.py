@@ -5,7 +5,7 @@ from isaaclab.assets import Articulation
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.utils import configclass
-from isaaclab.utils.math import quat_apply_inverse
+from isaaclab.utils.math import matrix_from_quat, quat_apply_inverse
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 from hbc_lab.tasks.locomotion import mdp
@@ -37,6 +37,30 @@ def grip_obs(env) -> torch.Tensor:
     return torch.cat((env.command_state.left_grip, env.command_state.right_grip), dim=-1)
 
 
+def high_level_command_state_obs(env) -> torch.Tensor:
+    if not hasattr(env, "command_state"):
+        return torch.zeros(env.num_envs, 23, device=env.device)
+
+    command = env.command_state
+    left_rot_6d = (
+        matrix_from_quat(command.left_wrist_pose_b[:, 3:])[:, :, :2].transpose(1, 2).reshape(-1, 6)
+    )
+    right_rot_6d = (
+        matrix_from_quat(command.right_wrist_pose_b[:, 3:])[:, :, :2].transpose(1, 2).reshape(-1, 6)
+    )
+    return torch.cat(
+        (
+            command.base_velocity,
+            command.posture_command,
+            command.left_wrist_pose_b[:, :3],
+            left_rot_6d,
+            command.right_wrist_pose_b[:, :3],
+            right_rot_6d,
+        ),
+        dim=-1,
+    )
+
+
 def last_high_level_action(env) -> torch.Tensor:
     return env.last_high_level_action
 
@@ -64,9 +88,12 @@ class G1Dex1HierDrcObservationsCfg:
         projected_gravity = ObsTerm(func=mdp.projected_gravity, noise=Unoise(n_min=-0.05, n_max=0.05))
         task = ObsTerm(func=object_goal_hand_obs, noise=Unoise(n_min=-0.01, n_max=0.01))
         grip = ObsTerm(func=grip_obs, noise=Unoise(n_min=-0.01, n_max=0.01))
+        command_state = ObsTerm(func=high_level_command_state_obs)
         last_high_action = ObsTerm(func=last_high_level_action)
 
         def __post_init__(self):
+            self.history_length = 10
+            self.flatten_history_dim = True
             self.enable_corruption = True
             self.concatenate_terms = True
 
@@ -77,6 +104,7 @@ class G1Dex1HierDrcObservationsCfg:
         projected_gravity = ObsTerm(func=mdp.projected_gravity)
         task = ObsTerm(func=object_goal_hand_obs)
         grip = ObsTerm(func=grip_obs)
+        command_state = ObsTerm(func=high_level_command_state_obs)
         last_high_action = ObsTerm(func=last_high_level_action)
         drc = ObsTerm(func=privileged_drc_obs)
 

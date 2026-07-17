@@ -826,7 +826,7 @@ UNITREE_G1_29DOF_DEX1_CFG = UNITREE_G1_29DOF_CFG.replace(
             "/robots/g1-29dof_wholebody_dex1/g1_29dof_with_dex1_rev_1_0.usd"
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-            enabled_self_collisions=False,
+            enabled_self_collisions=True,
             solver_position_iteration_count=8,
             solver_velocity_iteration_count=4,
         ),

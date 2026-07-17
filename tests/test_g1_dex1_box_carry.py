@@ -36,6 +36,7 @@ def test_bimanual_position_relation_rewards_opposite_balanced_hands():
         left_hand_pos=torch.tensor([[0.0, 0.2, 0.0], [0.0, 0.1, 0.0], [0.0, 0.2, 0.0]]),
         right_hand_pos=torch.tensor([[0.0, -0.2, 0.0], [0.0, -0.3, 0.0], [0.0, 0.2, 0.0]]),
         radial_balance_scale=0.1,
+        height_alignment_scale=0.05,
     )
 
     assert torch.allclose(relation.opposition, torch.tensor([1.0, 1.0, 0.0]), atol=1.0e-6)
@@ -49,6 +50,49 @@ def test_bimanual_position_relation_rewards_opposite_balanced_hands():
         torch.tensor([1.0, torch.exp(torch.tensor(-2.0)), 0.0]),
         atol=1.0e-6,
     )
+
+
+def test_bimanual_position_relation_rejects_top_side_grasp():
+    module = _load_contact_progress_module()
+    relation = module.compute_bimanual_position_relation(
+        object_pos=torch.zeros(2, 3),
+        left_hand_pos=torch.tensor([[0.0, 0.0, 0.10], [0.10, 0.0, 0.10]]),
+        right_hand_pos=torch.tensor([[0.0, -0.15, 0.0], [-0.10, 0.0, 0.0]]),
+        radial_balance_scale=0.1,
+        height_alignment_scale=0.05,
+    )
+
+    assert torch.allclose(relation.opposition, torch.tensor([0.0, 1.0]), atol=1.0e-6)
+    assert torch.allclose(
+        relation.height_alignment,
+        torch.exp(torch.tensor([-2.0, -2.0])),
+        atol=1.0e-6,
+    )
+    assert torch.allclose(
+        relation.score,
+        torch.tensor([0.0, torch.exp(torch.tensor(-2.0))]),
+        atol=1.0e-6,
+    )
+
+
+def test_manip_reward_requires_lift_before_transport_progress():
+    module = _load_contact_progress_module()
+    progress = module.compute_lift_gated_transport_progress(
+        lift_height=torch.tensor([0.0, 0.05, 0.10]),
+        transport_progress=torch.tensor([1.0, 0.8, 0.8]),
+        lift_target_height=0.10,
+    )
+
+    assert torch.allclose(progress.lift_progress, torch.tensor([0.0, 0.5, 1.0]))
+    assert torch.allclose(progress.transport_gate, progress.lift_progress)
+    assert torch.allclose(progress.reward, torch.tensor([0.3, 0.615, 0.93]), atol=1.0e-6)
+
+    env_source = _read(CONFIG_ROOT / "box_env.py")
+    rewards_source = _read(MDP_ROOT / "rewards.py")
+    assert "self.d_goal_xy = torch.norm((object_pos_w - self.object_target_pos_w)[:, :2]" in env_source
+    assert "env.d_goal_xy" in rewards_source
+    assert '"DRC/lift_progress_mean"' in rewards_source
+    assert '"DRC/transport_progress_mean"' in rewards_source
 
 
 def test_bimanual_support_separates_contact_gate_from_support_density():
@@ -150,7 +194,8 @@ def test_box_carry_uses_bimanual_contact_label_and_removes_gripper_close_shaping
     assert "early_close" not in rewards_source
     assert "left_support=progress.left_support" in env_source
     assert "right_support=progress.right_support" in env_source
-    assert "return 0.7 * progress + 0.3" in rewards_source
+    assert "compute_lift_gated_transport_progress" in rewards_source
+    assert "lift_target_height=0.10" in rewards_source
     assert "0.3 * env.c_couple" not in rewards_source
 
 
@@ -218,7 +263,9 @@ def test_box_env_uses_center_relative_bimanual_position_relation():
     assert "object_pos=object_pos_w" in env_source
     assert "left_hand_pos=hand_center_pos_w[:, 0, :]" in env_source
     assert "right_hand_pos=hand_center_pos_w[:, 1, :]" in env_source
+    assert "height_alignment_scale=0.05" in env_source
     assert "self.bimanual_position_relation = relation.score" in env_source
+    assert "self.bimanual_height_alignment = relation.height_alignment" in env_source
     assert "raw_couple=progress.couple_gate * relation.score" in env_source
     assert "self.c_opposition, relation.score" in env_source
     assert "position_couple = both_near * env.bimanual_position_relation" in rewards_source
@@ -236,6 +283,18 @@ def test_box_carry_observation_uses_only_the_base_object_center_interface():
     assert "self.observations.policy.task.func" not in cfg_source
     assert "self.observations.critic.task.func" not in cfg_source
     assert "object_pos_w = env.scene[\"object_frame\"].data.target_pos_w[:, 0, :]" in base_observations_source
+
+
+def test_box_carry_uses_command_state_and_ten_frame_actor_history():
+    cfg_source = _read(CONFIG_ROOT / "box_env_cfg.py")
+    base_observations_source = _read(
+        HBC_ROOT / "tasks/manager_based/skill/g1_dex1_hier_drc/mdp/observations.py"
+    )
+
+    assert "self.observations.policy.history_length = 10" in cfg_source
+    assert "def high_level_command_state_obs" in base_observations_source
+    assert "command_state = ObsTerm(func=high_level_command_state_obs)" in base_observations_source
+    assert "matrix_from_quat" in base_observations_source
 
 
 def test_box_carry_has_no_face_center_artifacts():

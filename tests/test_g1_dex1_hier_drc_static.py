@@ -84,6 +84,20 @@ def test_g1_dex1_samples_both_active_hands_and_exposes_contact_label_mask():
     assert "ContactLabelCommand.from_active_hand" in env_source
 
 
+def test_g1_dex1_actor_uses_ten_step_observation_history_only():
+    observation_source = _read(MDP_ROOT / "observations.py")
+    env_source = _read(CONFIG_ROOT / "g1_dex1_env.py")
+    policy_source = observation_source.split("    class PolicyCfg(ObsGroup):", maxsplit=1)[1].split(
+        "    class CriticCfg(ObsGroup):", maxsplit=1
+    )[0]
+    critic_source = observation_source.split("    class CriticCfg(ObsGroup):", maxsplit=1)[1]
+
+    assert "self.history_length = 10" in policy_source
+    assert "self.flatten_history_dim = True" in policy_source
+    assert "self.history_length = 10" not in critic_source
+    assert "self.obs_buf = self.observation_manager.compute(update_history=True)" in env_source
+
+
 def test_g1_dex1_hier_env_reuses_current_low_level_policy_interface():
     cfg_source = _read(CONFIG_ROOT / "g1_dex1_env_cfg.py")
     env_source = _read(CONFIG_ROOT / "g1_dex1_env.py")

@@ -14,6 +14,8 @@ from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.mdp.rewards import (
     task_success_reward,
 )
 
+from .contact_progress import compute_lift_gated_transport_progress
+
 
 def approach_reward(env) -> torch.Tensor:
     left_near = torch.exp(-env.left_hand_object_distance / 0.5)
@@ -33,9 +35,17 @@ def couple_reward(env) -> torch.Tensor:
 
 
 def manip_reward(env) -> torch.Tensor:
-    initial = torch.norm(env.object_initial_pos_w - env.object_target_pos_w, dim=-1)
-    progress = torch.clamp(initial - env.d_goal, min=0.0) / (initial + 1.0e-5)
-    return 0.7 * progress + 0.3
+    initial_xy = torch.norm((env.object_initial_pos_w - env.object_target_pos_w)[:, :2], dim=-1)
+    transport_progress = torch.clamp(initial_xy - env.d_goal_xy, min=0.0) / (initial_xy + 1.0e-5)
+    progress = compute_lift_gated_transport_progress(
+        lift_height=env.box_lift_height,
+        transport_progress=transport_progress,
+        lift_target_height=0.10,
+    )
+    env.extras["log"]["DRC/lift_progress_mean"] = progress.lift_progress.mean()
+    env.extras["log"]["DRC/transport_progress_mean"] = progress.transport_progress.mean()
+    env.extras["log"]["DRC/transport_gate_mean"] = progress.transport_gate.mean()
+    return progress.reward
 
 
 def hier_drc_reward(

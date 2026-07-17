@@ -120,6 +120,26 @@ The planned observation stack should grow in stages:
    - The residual should stabilize WBC rather than replace the base locomotion
      and tracking policy.
 
+Current high-level observation decision:
+
+- The deployable actor observation uses a 10-step flattened history, covering
+  about one second at the current 10 Hz high-level control rate.
+- The actor also observes the accumulated high-level command state directly,
+  including base, posture, hand-center position, and hand orientation commands,
+  so incremental commands do not create hidden state across long episodes.
+- The critic keeps instantaneous privileged DRC observations; simulator-only
+  contact quantities must not be added to the actor without a real-robot
+  sensing counterpart.
+- Follow-up if manipulation remains unstable: diagnose learned PPO standard
+  deviation and action saturation per action group and separately for active
+  and inactive hands. The current Gaussian policy has one global learned
+  standard deviation per action dimension, so inactive-hand and weakly
+  supervised orientation actions can inflate aggregate noise statistics.
+- For bimanual ground-box transport, coupling uses horizontal opposition,
+  horizontal radial balance, and hand-height agreement without assigning fixed
+  object faces. Manipulation first rewards lift, then smoothly opens horizontal
+  transport progress as the object reaches the target lift height.
+
 ## Generalization Goals
 
 The method should train across common whole-body interaction tasks through a

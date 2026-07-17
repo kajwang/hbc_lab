@@ -38,8 +38,10 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         self.early_contact = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.bimanual_position_opposition = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.bimanual_radial_balance = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
+        self.bimanual_height_alignment = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.bimanual_position_relation = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.box_lift_height = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
+        self.d_goal_xy = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         super().__init__(cfg, render_mode, **kwargs)
 
     def _reset_contact_accumulators(self) -> None:
@@ -81,6 +83,7 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
             left_hand_pos=hand_center_pos_w[:, 0, :],
             right_hand_pos=hand_center_pos_w[:, 1, :],
             radial_balance_scale=0.10,
+            height_alignment_scale=0.05,
         )
         left_clearance = torch.clamp(relation.left_distance - BOX_GRASP_RADIUS, min=0.0)
         right_clearance = torch.clamp(relation.right_distance - BOX_GRASP_RADIUS, min=0.0)
@@ -118,6 +121,7 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         self.d_active_hand = progress.distance
         self.bimanual_position_opposition = relation.opposition
         self.bimanual_radial_balance = relation.radial_balance
+        self.bimanual_height_alignment = relation.height_alignment
         self.bimanual_position_relation = relation.score
         self.left_support_contact = progress.left_support
         self.right_support_contact = progress.right_support
@@ -136,6 +140,7 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         )
 
         self.d_goal = torch.norm(object_pos_w - self.object_target_pos_w, dim=-1)
+        self.d_goal_xy = torch.norm((object_pos_w - self.object_target_pos_w)[:, :2], dim=-1)
         self.c_contact = update_ema(self.c_contact, progress.support_density, alpha=0.2)
         self.c_grasp = update_ema(self.c_grasp, progress.support_density, alpha=0.2)
         self.c_couple = update_ema(self.c_couple, self.distance_gated_couple, alpha=0.2)
@@ -169,8 +174,10 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         self.early_contact[env_ids] = 0.0
         self.bimanual_position_opposition[env_ids] = 0.0
         self.bimanual_radial_balance[env_ids] = 0.0
+        self.bimanual_height_alignment[env_ids] = 0.0
         self.bimanual_position_relation[env_ids] = 0.0
         self.box_lift_height[env_ids] = 0.0
+        self.d_goal_xy[env_ids] = 0.0
 
     def _log_link_contact_diagnostics(self, active_hand: torch.Tensor | None = None) -> None:
         super()._log_link_contact_diagnostics(active_hand)
@@ -199,7 +206,9 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
             self.bimanual_position_opposition.mean()
         )
         self.extras["log"]["BoxCarry/radial_balance_mean"] = self.bimanual_radial_balance.mean()
+        self.extras["log"]["BoxCarry/height_alignment_mean"] = self.bimanual_height_alignment.mean()
         self.extras["log"]["BoxCarry/position_relation_mean"] = self.bimanual_position_relation.mean()
         self.extras["log"]["BoxCarry/lift_height_mean"] = self.box_lift_height.mean()
+        self.extras["log"]["BoxCarry/goal_distance_xy_mean"] = self.d_goal_xy.mean()
         self.extras["log"]["BoxCarry/left_effector_required"] = self.contact_label.effector_mask[:, 0].mean()
         self.extras["log"]["BoxCarry/right_effector_required"] = self.contact_label.effector_mask[:, 1].mean()

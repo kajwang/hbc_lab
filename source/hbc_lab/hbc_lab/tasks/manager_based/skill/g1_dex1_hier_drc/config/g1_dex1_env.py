@@ -570,7 +570,7 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self.command_manager.compute(dt=self.step_dt)
         if "interval" in self.event_manager.available_modes:
             self.event_manager.apply(mode="interval", dt=self.step_dt)
-        self.obs_buf = self.observation_manager.compute()
+        self.obs_buf = self.observation_manager.compute(update_history=True)
         self._update_target_pose_visualization()
         self.extras["log"]["DRC/d_active_hand_mean"] = self.d_active_hand.mean()
         self.extras["log"]["DRC/c_contact_mean"] = self.c_contact.mean()

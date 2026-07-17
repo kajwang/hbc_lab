@@ -30,6 +30,7 @@ class G1Dex1BoxCarryEnvCfg(G1Dex1HierDrcEnvCfg):
 
     def __post_init__(self):
         super().__post_init__()
+        self.observations.policy.history_length = 10
         self.episode_length_s = 30.0
         self.commands.high_level.fixed_effector_mask = (1.0, 1.0)
         self.commands.high_level.contact_mode = int(ContactMode.BIMANUAL_BOX_SUPPORT)
