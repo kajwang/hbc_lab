@@ -29,50 +29,57 @@ def _load_contact_progress_module():
     return module
 
 
-def test_bimanual_position_relation_rewards_opposite_balanced_hands():
-    module = _load_contact_progress_module()
-    relation = module.compute_bimanual_position_relation(
-        object_pos=torch.zeros(3, 3),
-        left_hand_pos=torch.tensor([[0.0, 0.2, 0.0], [0.0, 0.1, 0.0], [0.0, 0.2, 0.0]]),
-        right_hand_pos=torch.tensor([[0.0, -0.2, 0.0], [0.0, -0.3, 0.0], [0.0, 0.2, 0.0]]),
-        radial_balance_scale=0.1,
-        height_alignment_scale=0.05,
-    )
-
-    assert torch.allclose(relation.opposition, torch.tensor([1.0, 1.0, 0.0]), atol=1.0e-6)
-    assert torch.allclose(
-        relation.radial_balance,
-        torch.tensor([1.0, torch.exp(torch.tensor(-2.0)), 1.0]),
-        atol=1.0e-6,
-    )
-    assert torch.allclose(
-        relation.score,
-        torch.tensor([1.0, torch.exp(torch.tensor(-2.0)), 0.0]),
-        atol=1.0e-6,
-    )
+def _load_face_targets_module():
+    module_path = MDP_ROOT / "face_targets.py"
+    assert module_path.exists(), f"Missing BoxCarry face-target module: {module_path}"
+    spec = importlib.util.spec_from_file_location("g1_dex1_box_face_targets_under_test", module_path)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
-def test_bimanual_position_relation_rejects_top_side_grasp():
-    module = _load_contact_progress_module()
-    relation = module.compute_bimanual_position_relation(
-        object_pos=torch.zeros(2, 3),
-        left_hand_pos=torch.tensor([[0.0, 0.0, 0.10], [0.10, 0.0, 0.10]]),
-        right_hand_pos=torch.tensor([[0.0, -0.15, 0.0], [-0.10, 0.0, 0.0]]),
-        radial_balance_scale=0.1,
-        height_alignment_scale=0.05,
+def test_long_axis_face_centers_follow_object_translation_and_yaw():
+    module = _load_face_targets_module()
+    object_pos = torch.tensor([[1.0, 2.0, 0.1], [0.0, 0.0, 0.1]])
+    identity = torch.tensor([1.0, 0.0, 0.0, 0.0])
+    yaw_90 = torch.tensor([2**-0.5, 0.0, 0.0, 2**-0.5])
+
+    positive, negative = module.compute_long_axis_face_centers(
+        object_pos,
+        torch.stack((identity, yaw_90)),
+        half_extent=0.15,
     )
 
-    assert torch.allclose(relation.opposition, torch.tensor([0.0, 1.0]), atol=1.0e-6)
-    assert torch.allclose(
-        relation.height_alignment,
-        torch.exp(torch.tensor([-2.0, -2.0])),
-        atol=1.0e-6,
+    assert torch.allclose(positive[0], torch.tensor([1.15, 2.0, 0.1]), atol=1.0e-6)
+    assert torch.allclose(negative[0], torch.tensor([0.85, 2.0, 0.1]), atol=1.0e-6)
+    assert torch.allclose(positive[1], torch.tensor([0.0, 0.15, 0.1]), atol=1.0e-6)
+    assert torch.allclose(negative[1], torch.tensor([0.0, -0.15, 0.1]), atol=1.0e-6)
+
+
+def test_face_assignment_uses_the_shorter_pairing():
+    module = _load_face_targets_module()
+    positive = torch.tensor([[0.0, 0.2, 0.1], [0.0, 0.2, 0.1]])
+    negative = torch.tensor([[0.0, -0.2, 0.1], [0.0, -0.2, 0.1]])
+    left_hand = torch.tensor([[0.0, 0.4, 0.1], [0.0, -0.4, 0.1]])
+    right_hand = torch.tensor([[0.0, -0.4, 0.1], [0.0, 0.4, 0.1]])
+
+    left_positive = module.choose_left_positive_assignment(
+        positive,
+        negative,
+        left_hand,
+        right_hand,
     )
-    assert torch.allclose(
-        relation.score,
-        torch.tensor([0.0, torch.exp(torch.tensor(-2.0))]),
-        atol=1.0e-6,
+    left_target, right_target = module.select_assigned_face_targets(
+        positive,
+        negative,
+        left_positive,
     )
+
+    assert torch.equal(left_positive, torch.tensor([True, False]))
+    assert torch.allclose(left_target, torch.stack((positive[0], negative[1])))
+    assert torch.allclose(right_target, torch.stack((negative[0], positive[1])))
 
 
 def test_manip_reward_requires_lift_before_transport_progress():
@@ -205,10 +212,10 @@ def test_box_carry_gates_support_per_hand_and_distance_gates_couple_progress():
 
     assert "compute_independent_support_reward_terms" in env_source
     assert "distance_scale=0.15" in env_source
-    assert "0.4 * both_near" in rewards_source
-    assert "+ 0.3 * position_couple" in rewards_source
-    assert "+ 0.3 * env.gated_support" in rewards_source
+    assert "0.5 * both_near" in rewards_source
+    assert "+ 0.5 * env.gated_support" in rewards_source
     assert "- 0.25 * env.early_contact" in rewards_source
+    assert "position_couple" not in rewards_source
     assert "compute_bimanual_distance_gated_couple" in env_source
     assert "self.distance_gated_couple" in env_source
     assert "self.c_couple = update_ema(self.c_couple, self.distance_gated_couple" in env_source
@@ -255,34 +262,35 @@ def test_box_carry_mass_curriculum_ends_at_two_kg():
     assert "object_mass_final_mass: float = 2.0" in cfg_source
 
 
-def test_box_env_uses_center_relative_bimanual_position_relation():
+def test_box_env_uses_episode_fixed_face_targets_for_progress():
     env_source = _read(CONFIG_ROOT / "box_env.py")
-    rewards_source = _read(MDP_ROOT / "rewards.py")
 
-    assert "compute_bimanual_position_relation" in env_source
-    assert "object_pos=object_pos_w" in env_source
-    assert "left_hand_pos=hand_center_pos_w[:, 0, :]" in env_source
-    assert "right_hand_pos=hand_center_pos_w[:, 1, :]" in env_source
-    assert "height_alignment_scale=0.05" in env_source
-    assert "self.bimanual_position_relation = relation.score" in env_source
-    assert "self.bimanual_height_alignment = relation.height_alignment" in env_source
-    assert "raw_couple=progress.couple_gate * relation.score" in env_source
-    assert "self.c_opposition, relation.score" in env_source
-    assert "position_couple = both_near * env.bimanual_position_relation" in rewards_source
+    assert "self.left_face_uses_positive" in env_source
+    assert "self.face_assignment_pending" in env_source
+    assert "compute_long_axis_face_centers" in env_source
+    assert "choose_left_positive_assignment" in env_source
+    assert "select_assigned_face_targets" in env_source
+    assert "0.5 * BOX_CUBE_SIZE[0]" in env_source
+    assert "hand_center_pos_w[:, 0, :] - self.left_face_target_pos_w" in env_source
+    assert "hand_center_pos_w[:, 1, :] - self.right_face_target_pos_w" in env_source
+    assert "raw_couple=progress.couple_gate" in env_source
+    assert "self.face_assignment_pending[env_ids] = True" in env_source
+    assert "compute_bimanual_position_relation" not in env_source
 
 
-def test_box_carry_observation_uses_only_the_base_object_center_interface():
+def test_box_carry_observes_assigned_face_targets_in_root_frame():
     observations_path = MDP_ROOT / "observations.py"
     cfg_source = _read(CONFIG_ROOT / "box_env_cfg.py")
-    base_observations_source = _read(
-        HBC_ROOT / "tasks/manager_based/skill/g1_dex1_hier_drc/mdp/observations.py"
-    )
 
-    assert not observations_path.exists()
-    assert "box_object_goal_hand_obs" not in cfg_source
-    assert "self.observations.policy.task.func" not in cfg_source
-    assert "self.observations.critic.task.func" not in cfg_source
-    assert "object_pos_w = env.scene[\"object_frame\"].data.target_pos_w[:, 0, :]" in base_observations_source
+    assert observations_path.exists()
+    observations_source = _read(observations_path)
+    assert "object_goal_hand_obs(env)" in observations_source
+    assert "env._update_face_targets()" in observations_source
+    assert "env.left_face_target_pos_w - robot.data.root_pos_w" in observations_source
+    assert "env.right_face_target_pos_w - robot.data.root_pos_w" in observations_source
+    assert "quat_apply_inverse" in observations_source
+    assert "self.observations.policy.task.func = box_object_goal_hand_obs" in cfg_source
+    assert "self.observations.critic.task.func = box_object_goal_hand_obs" in cfg_source
 
 
 def test_box_carry_uses_command_state_and_ten_frame_actor_history():
@@ -297,19 +305,19 @@ def test_box_carry_uses_command_state_and_ten_frame_actor_history():
     assert "matrix_from_quat" in base_observations_source
 
 
-def test_box_carry_has_no_face_center_artifacts():
+def test_box_carry_visualizes_and_logs_assigned_face_targets():
     env_source = _read(CONFIG_ROOT / "box_env.py")
     mdp_init_source = _read(MDP_ROOT / "__init__.py")
 
-    assert not (MDP_ROOT / "face_targets.py").exists()
-    assert "face_target" not in env_source
-    assert "face_assignment" not in env_source
-    assert "FACE_TARGET_MARKER" not in env_source
-    assert "face_targets" not in mdp_init_source
-    assert '"BoxCarry/left_hand_center_distance"' in env_source
-    assert '"BoxCarry/right_hand_center_distance"' in env_source
-    assert '"BoxCarry/position_opposition_mean"' in env_source
-    assert '"BoxCarry/position_relation_mean"' in env_source
+    assert (MDP_ROOT / "face_targets.py").exists()
+    assert "face_targets" in mdp_init_source
+    assert "LEFT_FACE_TARGET_MARKER_CFG" in env_source
+    assert "RIGHT_FACE_TARGET_MARKER_CFG" in env_source
+    assert "self.left_face_target_visualizer.visualize(self.left_face_target_pos_w)" in env_source
+    assert "self.right_face_target_visualizer.visualize(self.right_face_target_pos_w)" in env_source
+    assert '"BoxCarry/left_face_target_error"' in env_source
+    assert '"BoxCarry/right_face_target_error"' in env_source
+    assert '"BoxCarry/left_positive_assignment_ratio"' in env_source
 
 
 def test_box_carry_forwards_pre_reset_active_hand_to_base_contact_logging():

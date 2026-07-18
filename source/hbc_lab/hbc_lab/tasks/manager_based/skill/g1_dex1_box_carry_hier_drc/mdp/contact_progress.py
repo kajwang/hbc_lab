@@ -19,16 +19,6 @@ class BimanualSupportProgress:
 
 
 @dataclass
-class BimanualPositionRelation:
-    left_distance: torch.Tensor
-    right_distance: torch.Tensor
-    opposition: torch.Tensor
-    radial_balance: torch.Tensor
-    height_alignment: torch.Tensor
-    score: torch.Tensor
-
-
-@dataclass
 class LiftGatedTransportProgress:
     lift_progress: torch.Tensor
     transport_progress: torch.Tensor
@@ -55,49 +45,6 @@ def compute_lift_gated_transport_progress(
         transport_progress=transport_progress,
         transport_gate=transport_gate,
         reward=reward,
-    )
-
-
-def compute_bimanual_position_relation(
-    object_pos: torch.Tensor,
-    left_hand_pos: torch.Tensor,
-    right_hand_pos: torch.Tensor,
-    radial_balance_scale: float,
-    height_alignment_scale: float,
-) -> BimanualPositionRelation:
-    """Score an axis-free horizontal opposing grasp around the object center."""
-    if radial_balance_scale <= 0.0:
-        raise ValueError(f"radial_balance_scale must be positive, got {radial_balance_scale}")
-    if height_alignment_scale <= 0.0:
-        raise ValueError(f"height_alignment_scale must be positive, got {height_alignment_scale}")
-    if not (object_pos.shape == left_hand_pos.shape == right_hand_pos.shape):
-        raise ValueError("object and hand positions must have identical shapes")
-    if object_pos.ndim != 2 or object_pos.shape[-1] != 3:
-        raise ValueError("object and hand positions must have shape (num_envs, 3)")
-
-    left_vector = left_hand_pos - object_pos
-    right_vector = right_hand_pos - object_pos
-    left_distance = torch.linalg.vector_norm(left_vector, dim=-1)
-    right_distance = torch.linalg.vector_norm(right_vector, dim=-1)
-    left_radius_xy = torch.linalg.vector_norm(left_vector[:, :2], dim=-1)
-    right_radius_xy = torch.linalg.vector_norm(right_vector[:, :2], dim=-1)
-    norm_product = left_radius_xy * right_radius_xy
-    cosine = torch.sum(left_vector[:, :2] * right_vector[:, :2], dim=-1) / norm_product.clamp_min(
-        1.0e-6
-    )
-    opposition = 0.5 * (1.0 - torch.clamp(cosine, min=-1.0, max=1.0))
-    opposition = opposition * (norm_product > 1.0e-6).to(dtype=opposition.dtype)
-    radial_balance = torch.exp(-torch.abs(left_radius_xy - right_radius_xy) / radial_balance_scale)
-    height_alignment = torch.exp(
-        -torch.abs(left_vector[:, 2] - right_vector[:, 2]) / height_alignment_scale
-    )
-    return BimanualPositionRelation(
-        left_distance=left_distance,
-        right_distance=right_distance,
-        opposition=opposition,
-        radial_balance=radial_balance,
-        height_alignment=height_alignment,
-        score=opposition * radial_balance * height_alignment,
     )
 
 

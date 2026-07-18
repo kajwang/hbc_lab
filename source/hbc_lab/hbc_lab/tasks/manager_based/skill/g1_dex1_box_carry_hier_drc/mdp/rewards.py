@@ -25,13 +25,7 @@ def approach_reward(env) -> torch.Tensor:
 
 def couple_reward(env) -> torch.Tensor:
     both_near = 1.0 - torch.tanh(env.d_active_hand / 0.5)
-    position_couple = both_near * env.bimanual_position_relation
-    return (
-        0.4 * both_near
-        + 0.3 * position_couple
-        + 0.3 * env.gated_support
-        - 0.25 * env.early_contact
-    )
+    return 0.5 * both_near + 0.5 * env.gated_support - 0.25 * env.early_contact
 
 
 def manip_reward(env) -> torch.Tensor:

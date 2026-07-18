@@ -6,6 +6,7 @@ from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.config.g1_dex1_env_cfg i
 from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.mdp.contact_labels import ContactMode
 
 from ..mdp.events import G1Dex1BoxCarryEventCfg
+from ..mdp.observations import box_object_goal_hand_obs
 from ..mdp.rewards import G1Dex1BoxCarryRewardsCfg
 from ..mdp.scenes import (
     BOX_PALM_CONTACT_SENSOR_NAMES,
@@ -31,6 +32,8 @@ class G1Dex1BoxCarryEnvCfg(G1Dex1HierDrcEnvCfg):
     def __post_init__(self):
         super().__post_init__()
         self.observations.policy.history_length = 10
+        self.observations.policy.task.func = box_object_goal_hand_obs
+        self.observations.critic.task.func = box_object_goal_hand_obs
         self.episode_length_s = 30.0
         self.commands.high_level.fixed_effector_mask = (1.0, 1.0)
         self.commands.high_level.contact_mode = int(ContactMode.BIMANUAL_BOX_SUPPORT)

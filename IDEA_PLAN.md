@@ -135,9 +135,10 @@ Current high-level observation decision:
   and inactive hands. The current Gaussian policy has one global learned
   standard deviation per action dimension, so inactive-hand and weakly
   supervised orientation actions can inflate aggregate noise statistics.
-- For bimanual ground-box transport, coupling uses horizontal opposition,
-  horizontal radial balance, and hand-height agreement without assigning fixed
-  object faces. Manipulation first rewards lift, then smoothly opens horizontal
+- For bimanual ground-box transport, the contact label resolves to two live
+  object-local anchors on the centers of the longest-axis opposing faces. The
+  hand-to-face assignment is fixed per episode while the anchors follow object
+  pose. Manipulation first rewards lift, then smoothly opens horizontal
   transport progress as the object reaches the target lift height.
 
 ## Generalization Goals
