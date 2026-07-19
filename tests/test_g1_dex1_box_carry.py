@@ -85,14 +85,14 @@ def test_face_assignment_uses_the_shorter_pairing():
 def test_manip_reward_requires_lift_before_transport_progress():
     module = _load_contact_progress_module()
     progress = module.compute_lift_gated_transport_progress(
-        lift_height=torch.tensor([0.0, 0.05, 0.10]),
+        lift_height=torch.tensor([0.0, 0.20, 0.40]),
         transport_progress=torch.tensor([1.0, 0.8, 0.8]),
-        lift_target_height=0.10,
+        lift_target_height=0.40,
     )
 
     assert torch.allclose(progress.lift_progress, torch.tensor([0.0, 0.5, 1.0]))
     assert torch.allclose(progress.transport_gate, progress.lift_progress)
-    assert torch.allclose(progress.reward, torch.tensor([0.3, 0.615, 0.93]), atol=1.0e-6)
+    assert torch.allclose(progress.reward, torch.tensor([0.3, 0.59, 0.88]), atol=1.0e-6)
 
     env_source = _read(CONFIG_ROOT / "box_env.py")
     rewards_source = _read(MDP_ROOT / "rewards.py")
@@ -202,7 +202,7 @@ def test_box_carry_uses_bimanual_contact_label_and_removes_gripper_close_shaping
     assert "left_support=progress.left_support" in env_source
     assert "right_support=progress.right_support" in env_source
     assert "compute_lift_gated_transport_progress" in rewards_source
-    assert "lift_target_height=0.10" in rewards_source
+    assert "lift_target_height=0.40" in rewards_source
     assert "0.3 * env.c_couple" not in rewards_source
 
 

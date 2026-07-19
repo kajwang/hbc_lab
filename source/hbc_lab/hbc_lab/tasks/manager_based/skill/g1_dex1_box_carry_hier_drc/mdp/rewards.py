@@ -34,7 +34,7 @@ def manip_reward(env) -> torch.Tensor:
     progress = compute_lift_gated_transport_progress(
         lift_height=env.box_lift_height,
         transport_progress=transport_progress,
-        lift_target_height=0.10,
+        lift_target_height=0.40,
     )
     env.extras["log"]["DRC/lift_progress_mean"] = progress.lift_progress.mean()
     env.extras["log"]["DRC/transport_progress_mean"] = progress.transport_progress.mean()

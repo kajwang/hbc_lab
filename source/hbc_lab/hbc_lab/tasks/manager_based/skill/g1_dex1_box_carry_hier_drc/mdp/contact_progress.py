@@ -39,7 +39,7 @@ def compute_lift_gated_transport_progress(
     lift_progress = torch.clamp(lift_height / lift_target_height, min=0.0, max=1.0)
     transport_progress = torch.clamp(transport_progress, min=0.0, max=1.0)
     transport_gate = lift_progress
-    reward = 0.3 + 0.35 * lift_progress + 0.35 * transport_gate * transport_progress
+    reward = 0.3 + 0.1 * lift_progress + 0.6 * transport_gate * transport_progress
     return LiftGatedTransportProgress(
         lift_progress=lift_progress,
         transport_progress=transport_progress,
