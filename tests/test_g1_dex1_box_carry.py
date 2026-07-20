@@ -92,7 +92,7 @@ def test_manip_reward_requires_lift_before_transport_progress():
 
     assert torch.allclose(progress.lift_progress, torch.tensor([0.0, 0.5, 1.0]))
     assert torch.allclose(progress.transport_gate, progress.lift_progress)
-    assert torch.allclose(progress.reward, torch.tensor([0.3, 0.59, 0.88]), atol=1.0e-6)
+    assert torch.allclose(progress.reward, torch.tensor([0.3, 1.24, 2.18]), atol=1.0e-6)
 
     env_source = _read(CONFIG_ROOT / "box_env.py")
     rewards_source = _read(MDP_ROOT / "rewards.py")
@@ -253,13 +253,13 @@ def test_box_carry_has_independent_registration_agent_and_launch_entries():
     assert '"name": "g1_dex1_box_carry_hier_drc_play"' in launch_source
 
 
-def test_box_carry_mass_curriculum_ends_at_two_kg():
+def test_box_carry_mass_curriculum_ends_at_one_kg():
     cfg_source = _read(CONFIG_ROOT / "box_env_cfg.py")
 
     assert "object_mass_start_mass: float = 10.0" in cfg_source
     assert "object_mass_ref_mass: float = 5.0" in cfg_source
-    assert "object_mass_anchor_mass: float = 2.0" in cfg_source
-    assert "object_mass_final_mass: float = 2.0" in cfg_source
+    assert "object_mass_anchor_mass: float = 1.0" in cfg_source
+    assert "object_mass_final_mass: float = 1.0" in cfg_source
 
 
 def test_box_env_uses_episode_fixed_face_targets_for_progress():

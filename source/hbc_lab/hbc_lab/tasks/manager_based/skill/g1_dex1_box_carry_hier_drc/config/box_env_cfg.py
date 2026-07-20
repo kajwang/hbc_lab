@@ -23,8 +23,8 @@ class G1Dex1BoxCarryEnvCfg(G1Dex1HierDrcEnvCfg):
     object_goal_radius_range: tuple[float, float] = (1.5, 2.5)
     object_mass_start_mass: float = 10.0
     object_mass_ref_mass: float = 5.0
-    object_mass_anchor_mass: float = 2.0
-    object_mass_final_mass: float = 2.0
+    object_mass_anchor_mass: float = 1.0
+    object_mass_final_mass: float = 1.0
     object_mass_min: float = 0.5
     object_mass_max: float = 15.0
     success_distance: float = 0.20
