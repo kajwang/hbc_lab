@@ -3,7 +3,6 @@ from .face_targets import *  # noqa: F401, F403
 
 try:
     from .events import *  # noqa: F401, F403
-    from .observations import *  # noqa: F401, F403
     from .rewards import *  # noqa: F401, F403
     from .scenes import *  # noqa: F401, F403
 except ModuleNotFoundError as exc:

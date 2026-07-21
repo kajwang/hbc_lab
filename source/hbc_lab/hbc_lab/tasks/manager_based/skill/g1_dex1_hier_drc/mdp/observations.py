@@ -20,15 +20,21 @@ def hand_center_positions_w(env) -> tuple[torch.Tensor, torch.Tensor]:
 
 def object_goal_hand_obs(env) -> torch.Tensor:
     robot: Articulation = env.scene["robot"]
-    object_pos_w = env.scene["object_frame"].data.target_pos_w[:, 0, :]
+    env._update_contact_target_regions()
     goal_pos_w = env.object_target_pos_w
     left_pos_w, right_pos_w = hand_center_positions_w(env)
-    object_pos_b = quat_apply_inverse(robot.data.root_quat_w, object_pos_w - robot.data.root_pos_w)
     goal_pos_b = quat_apply_inverse(robot.data.root_quat_w, goal_pos_w - robot.data.root_pos_w)
     left_pos_b = quat_apply_inverse(robot.data.root_quat_w, left_pos_w - robot.data.root_pos_w)
     right_pos_b = quat_apply_inverse(robot.data.root_quat_w, right_pos_w - robot.data.root_pos_w)
-    effector_mask = env.contact_label.effector_mask.to(dtype=object_pos_b.dtype)
-    return torch.cat((object_pos_b, goal_pos_b, left_pos_b, right_pos_b, effector_mask), dim=-1)
+    target_region_w = env.contact_label.target_region
+    root_quat_w = robot.data.root_quat_w.unsqueeze(1).expand(-1, target_region_w.shape[1], -1)
+    target_region_b = quat_apply_inverse(
+        root_quat_w.reshape(-1, 4),
+        (target_region_w - robot.data.root_pos_w.unsqueeze(1)).reshape(-1, 3),
+    ).reshape(env.num_envs, -1, 3)
+    effector_mask = env.contact_label.effector_mask.to(dtype=goal_pos_b.dtype)
+    target_region_b = target_region_b * effector_mask.unsqueeze(-1)
+    return torch.cat((goal_pos_b, left_pos_b, right_pos_b, target_region_b.flatten(1), effector_mask), dim=-1)
 
 
 def grip_obs(env) -> torch.Tensor:

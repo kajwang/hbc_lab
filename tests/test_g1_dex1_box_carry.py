@@ -182,15 +182,15 @@ def test_box_carry_task_uses_ground_cube_far_goal_and_no_platforms():
 
 def test_box_carry_uses_bimanual_contact_label_and_removes_gripper_close_shaping():
     contact_labels_source = _read(
-        HBC_ROOT / "tasks/manager_based/skill/g1_dex1_hier_drc/mdp/contact_labels.py"
+        HBC_ROOT / "tasks/manager_based/skill/contact_labels.py"
     )
     cfg_source = _read(CONFIG_ROOT / "box_env_cfg.py")
     env_source = _read(CONFIG_ROOT / "box_env.py")
     rewards_source = _read(MDP_ROOT / "rewards.py")
 
-    assert "BIMANUAL_BOX_SUPPORT" in contact_labels_source
+    assert "SUPPORT" in contact_labels_source
     assert "fixed_effector_mask = (1.0, 1.0)" in cfg_source
-    assert "ContactMode.BIMANUAL_BOX_SUPPORT" in cfg_source
+    assert "ContactMode.SUPPORT" in cfg_source
     assert "compute_bimanual_support_progress" in env_source
     assert "self.bimanual_support_contact = progress.support_density" in env_source
     assert "self.bimanual_contact_gate = progress.couple_gate" in env_source
@@ -271,26 +271,27 @@ def test_box_env_uses_episode_fixed_face_targets_for_progress():
     assert "choose_left_positive_assignment" in env_source
     assert "select_assigned_face_targets" in env_source
     assert "0.5 * BOX_CUBE_SIZE[0]" in env_source
-    assert "hand_center_pos_w[:, 0, :] - self.left_face_target_pos_w" in env_source
-    assert "hand_center_pos_w[:, 1, :] - self.right_face_target_pos_w" in env_source
+    assert "self.contact_label.set_target_region" in env_source
+    assert "target_region = self.contact_label.target_region" in env_source
+    assert "hand_center_pos_w[:, 0, :] - target_region[:, 0, :]" in env_source
+    assert "hand_center_pos_w[:, 1, :] - target_region[:, 1, :]" in env_source
+    assert "self.left_face_target_pos_w" not in env_source
+    assert "self.right_face_target_pos_w" not in env_source
     assert "raw_couple=progress.couple_gate" in env_source
     assert "self.face_assignment_pending[env_ids] = True" in env_source
     assert "compute_bimanual_position_relation" not in env_source
 
 
-def test_box_carry_observes_assigned_face_targets_in_root_frame():
-    observations_path = MDP_ROOT / "observations.py"
+def test_box_carry_observes_shared_contact_targets_in_root_frame():
+    observations_path = HBC_ROOT / "tasks/manager_based/skill/g1_dex1_hier_drc/mdp/observations.py"
     cfg_source = _read(CONFIG_ROOT / "box_env_cfg.py")
 
     assert observations_path.exists()
     observations_source = _read(observations_path)
-    assert "object_goal_hand_obs(env)" in observations_source
-    assert "env._update_face_targets()" in observations_source
-    assert "env.left_face_target_pos_w - robot.data.root_pos_w" in observations_source
-    assert "env.right_face_target_pos_w - robot.data.root_pos_w" in observations_source
+    assert "env.contact_label.target_region" in observations_source
+    assert "target_region_b" in observations_source
     assert "quat_apply_inverse" in observations_source
-    assert "self.observations.policy.task.func = box_object_goal_hand_obs" in cfg_source
-    assert "self.observations.critic.task.func = box_object_goal_hand_obs" in cfg_source
+    assert "box_object_goal_hand_obs" not in cfg_source
 
 
 def test_box_carry_uses_command_state_and_ten_frame_actor_history():
@@ -313,8 +314,8 @@ def test_box_carry_visualizes_and_logs_assigned_face_targets():
     assert "face_targets" in mdp_init_source
     assert "LEFT_FACE_TARGET_MARKER_CFG" in env_source
     assert "RIGHT_FACE_TARGET_MARKER_CFG" in env_source
-    assert "self.left_face_target_visualizer.visualize(self.left_face_target_pos_w)" in env_source
-    assert "self.right_face_target_visualizer.visualize(self.right_face_target_pos_w)" in env_source
+    assert "self.left_face_target_visualizer.visualize(self.contact_label.target_region[:, 0, :])" in env_source
+    assert "self.right_face_target_visualizer.visualize(self.contact_label.target_region[:, 1, :])" in env_source
     assert '"BoxCarry/left_face_target_error"' in env_source
     assert '"BoxCarry/right_face_target_error"' in env_source
     assert '"BoxCarry/left_positive_assignment_ratio"' in env_source

@@ -9,7 +9,7 @@ from isaaclab.markers.config import FRAME_MARKER_CFG
 from hbc_lab.assets.objects import OBJECT_PLATFORM_HEIGHT
 from hbc_lab.assets.robots.unitree import G1_29DOF_BODY_JOINT_NAMES
 
-from ..mdp.contact_labels import ContactLabelCommand, ContactMode
+from hbc_lab.tasks.manager_based.skill.contact_labels import ContactLabel, ContactMode
 from ..mdp.contact_progress import (
     compute_active_hand_grasp_progress,
 )
@@ -99,9 +99,9 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self._high_level_action_abs_mean = torch.zeros((), device=cfg.sim.device)
         self._last_low_level_action = torch.zeros(cfg.scene.num_envs, len(self.body_joint_names), device=cfg.sim.device)
         self.active_hand = torch.zeros(cfg.scene.num_envs, dtype=torch.long, device=cfg.sim.device)
-        self.contact_label = ContactLabelCommand.from_active_hand(
+        self.contact_label = ContactLabel.from_active_hand(
             self.active_hand,
-            mode=ContactMode.INNER_PAD_GRASP,
+            contact_mode=ContactMode.GRASP,
         )
         super().__init__(cfg, render_mode, **kwargs)
 
@@ -374,12 +374,14 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
             self.extras["log"][f"ContactLink/active_{link_name}_force"] = active_force.mean()
 
     def _compute_progress(self):
+        self._update_contact_target_regions()
         object_pos_w = self._object_frame_pos_w()
         hand_center_pos_w = self.scene[HAND_CENTER_FRAME_NAME].data.target_pos_w
         left_pos_w = hand_center_pos_w[:, 0, :]
         right_pos_w = hand_center_pos_w[:, 1, :]
-        left_distance = torch.norm(left_pos_w - object_pos_w, dim=-1)
-        right_distance = torch.norm(right_pos_w - object_pos_w, dim=-1)
+        target_region = self.contact_label.target_region
+        left_distance = torch.norm(left_pos_w - target_region[:, 0, :], dim=-1)
+        right_distance = torch.norm(right_pos_w - target_region[:, 1, :], dim=-1)
         progress = compute_active_hand_grasp_progress(
             left_gripper_left_force_w=self._step_left_left_force_w,
             left_gripper_right_force_w=self._step_left_right_force_w,
@@ -419,6 +421,15 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self.W_couple = weights[:, 1]
         self.W_manip = weights[:, 2]
         self._update_object_mass_curriculum()
+
+    def _update_contact_target_regions(self, env_ids: torch.Tensor | None = None) -> None:
+        if env_ids is None:
+            env_ids = torch.arange(self.num_envs, device=self.device)
+        else:
+            env_ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.long)
+        object_pos_w = self._object_frame_pos_w()
+        target_region = object_pos_w.unsqueeze(1).expand(-1, 2, -1)
+        self.contact_label.set_target_region(env_ids, target_region[env_ids])
 
     def _update_object_mass_curriculum(self) -> None:
         if not getattr(self.cfg, "object_mass_curriculum_enabled", False):
@@ -486,6 +497,7 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         super()._reset_idx(env_ids)
         env_ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.long)
         self._reset_hier_buffers(env_ids)
+        self._update_contact_target_regions(env_ids)
 
     def _update_target_pose_visualization(self) -> None:
         if not getattr(self.cfg, "target_pose_debug_vis", False):

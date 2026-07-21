@@ -1,4 +1,4 @@
-from .contact_labels import *  # noqa: F401, F403
+from hbc_lab.tasks.manager_based.skill.contact_labels import *  # noqa: F401, F403
 from .contact_progress import *  # noqa: F401, F403
 from .drc_math import *  # noqa: F401, F403
 from .gripper import *  # noqa: F401, F403

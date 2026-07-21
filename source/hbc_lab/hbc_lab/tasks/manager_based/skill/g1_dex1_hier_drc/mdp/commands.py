@@ -13,7 +13,7 @@ from isaaclab.utils import configclass
 from isaaclab.utils import math as math_utils
 from isaaclab.utils.math import yaw_quat
 
-from .contact_labels import ContactMode
+from hbc_lab.tasks.manager_based.skill.contact_labels import ContactMode
 from .contact_progress import sample_active_hands
 
 
@@ -97,7 +97,7 @@ class G1Dex1HierCommand(CommandTerm):
             ).repeat(len(env_ids_t), 1)
             self.contact_label.set_effector_mask(env_ids_t, effector_mask)
             self.active_hand[env_ids_t] = torch.argmax(effector_mask, dim=-1)
-        self.contact_label.set_mode(env_ids_t, self.cfg.contact_mode)
+        self.contact_label.set_contact_mode(env_ids_t, self.cfg.contact_mode)
 
     def _update_command(self):
         return
@@ -228,7 +228,7 @@ class G1Dex1HierCommandCfg(CommandTermCfg):
     asset_name: str = MISSING
     left_hand_probability: float = 0.5
     fixed_effector_mask: tuple[float, float] | None = None
-    contact_mode: int = int(ContactMode.INNER_PAD_GRASP)
+    contact_mode: int = int(ContactMode.GRASP)
     default_root_height: float = 0.8
     default_torso_pitch: float = 0.0
     default_left_wrist_pose_b: tuple[float, float, float, float, float, float, float] = (

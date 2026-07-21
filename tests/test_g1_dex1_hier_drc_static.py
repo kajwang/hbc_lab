@@ -81,7 +81,13 @@ def test_g1_dex1_samples_both_active_hands_and_exposes_contact_label_mask():
     assert "self.commands.high_level.left_hand_probability = 0.0" not in flat_cfg_source
     assert "self.contact_label.set_single_active_hand" in command_source
     assert "env.contact_label.effector_mask" in observation_source
-    assert "ContactLabelCommand.from_active_hand" in env_source
+    assert "env.contact_label.target_region" in observation_source
+    assert "target_region_b = target_region_b * effector_mask.unsqueeze(-1)" in observation_source
+    assert "ContactLabel.from_active_hand" in env_source
+    assert "ContactMode.GRASP" in env_source
+    assert "contact_mode" not in observation_source.split("def object_goal_hand_obs", maxsplit=1)[1].split(
+        "def grip_obs", maxsplit=1
+    )[0]
 
 
 def test_g1_dex1_actor_uses_ten_step_observation_history_only():

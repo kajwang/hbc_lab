@@ -61,8 +61,6 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         self.early_contact = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.box_lift_height = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.d_goal_xy = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
-        self.left_face_target_pos_w = torch.zeros(cfg.scene.num_envs, 3, device=cfg.sim.device)
-        self.right_face_target_pos_w = torch.zeros(cfg.scene.num_envs, 3, device=cfg.sim.device)
         self.left_face_uses_positive = torch.zeros(
             cfg.scene.num_envs,
             dtype=torch.bool,
@@ -108,7 +106,7 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         object_root_z = self.scene["object"].data.root_pos_w[:, 2]
         return object_root_z < self.scene.env_origins[:, 2] - 0.02
 
-    def _update_face_targets(self) -> None:
+    def _update_contact_target_regions(self, env_ids: torch.Tensor | None = None) -> None:
         obj = self.scene["object"]
         positive_w, negative_w = compute_long_axis_face_centers(
             obj.data.root_pos_w,
@@ -132,19 +130,24 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
             negative_w,
             self.left_face_uses_positive,
         )
-        self.left_face_target_pos_w.copy_(left_target_w)
-        self.right_face_target_pos_w.copy_(right_target_w)
+        target_region = torch.stack((left_target_w, right_target_w), dim=1)
+        if env_ids is None:
+            env_ids = torch.arange(self.num_envs, device=self.device)
+        else:
+            env_ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.long)
+        self.contact_label.set_target_region(env_ids, target_region[env_ids])
 
     def _compute_progress(self):
-        self._update_face_targets()
+        self._update_contact_target_regions()
         object_pos_w = self._object_frame_pos_w()
         hand_center_pos_w = self.scene[HAND_CENTER_FRAME_NAME].data.target_pos_w
+        target_region = self.contact_label.target_region
         left_distance = torch.norm(
-            hand_center_pos_w[:, 0, :] - self.left_face_target_pos_w,
+            hand_center_pos_w[:, 0, :] - target_region[:, 0, :],
             dim=-1,
         )
         right_distance = torch.norm(
-            hand_center_pos_w[:, 1, :] - self.right_face_target_pos_w,
+            hand_center_pos_w[:, 1, :] - target_region[:, 1, :],
             dim=-1,
         )
         progress = compute_bimanual_support_progress(
@@ -230,8 +233,6 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         self.early_contact[env_ids] = 0.0
         self.box_lift_height[env_ids] = 0.0
         self.d_goal_xy[env_ids] = 0.0
-        self.left_face_target_pos_w[env_ids] = 0.0
-        self.right_face_target_pos_w[env_ids] = 0.0
         self.left_face_uses_positive[env_ids] = False
         self.face_assignment_pending[env_ids] = True
 
@@ -239,14 +240,14 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         super()._update_target_pose_visualization()
         if not getattr(self.cfg, "target_pose_debug_vis", False):
             return
-        self._update_face_targets()
+        self._update_contact_target_regions()
         if self.left_face_target_visualizer is None:
             self.left_face_target_visualizer = VisualizationMarkers(LEFT_FACE_TARGET_MARKER_CFG)
             self.right_face_target_visualizer = VisualizationMarkers(RIGHT_FACE_TARGET_MARKER_CFG)
             self.left_face_target_visualizer.set_visibility(True)
             self.right_face_target_visualizer.set_visibility(True)
-        self.left_face_target_visualizer.visualize(self.left_face_target_pos_w)
-        self.right_face_target_visualizer.visualize(self.right_face_target_pos_w)
+        self.left_face_target_visualizer.visualize(self.contact_label.target_region[:, 0, :])
+        self.right_face_target_visualizer.visualize(self.contact_label.target_region[:, 1, :])
 
     def _log_link_contact_diagnostics(self, active_hand: torch.Tensor | None = None) -> None:
         super()._log_link_contact_diagnostics(active_hand)

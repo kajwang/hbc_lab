@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import torch
 
-from .contact_labels import LEFT_HAND, RIGHT_HAND
+from hbc_lab.tasks.manager_based.skill.contact_labels import LEFT_HAND, RIGHT_HAND
 
 
 @dataclass
