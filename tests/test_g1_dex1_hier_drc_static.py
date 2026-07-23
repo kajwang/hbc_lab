@@ -143,6 +143,12 @@ def test_g1_dex1_goal_is_sampled_behind_init_relative_to_robot():
     assert "heading = away_heading + heading_jitter" in events_source
 
 
+def test_g1_dex1_goal_platform_is_sampled_far_from_init_platform():
+    cfg_source = _read(CONFIG_ROOT / "g1_dex1_env_cfg.py")
+
+    assert "object_goal_radius_range: tuple[float, float] = (1.5, 2.5)" in cfg_source
+
+
 def test_g1_dex1_couple_reward_uses_grasp_window_and_inner_pad_contact():
     progress_source = _read(MDP_ROOT / "contact_progress.py")
     reward_source = _read(MDP_ROOT / "rewards.py")

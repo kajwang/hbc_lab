@@ -66,7 +66,7 @@ class G1Dex1HierDrcEnvCfg(ManagerBasedRLEnvCfg):
     success_distance: float = 0.08
     success_steps: int = 25
     success_couple_threshold: float = 0.45
-    object_goal_radius_range: tuple[float, float] = (0.4, 1.2)
+    object_goal_radius_range: tuple[float, float] = (1.5, 2.5)
     object_mass_curriculum_enabled: bool = True
     object_mass_w_manip_ema_alpha: float = 0.01
     object_mass_start_w: float = 0.0
