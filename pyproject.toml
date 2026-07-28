@@ -15,6 +15,7 @@ where = ["source/hbc_lab"]
 
 [tool.setuptools.package-data]
 hbc_lab = [
+    "assets/models/articulated/**/*.usd",
     "assets/models/unitree_sim_isaaclab/assets/robots/g1-29dof_wholebody_dex1/.asset_hash",
     "assets/models/unitree_sim_isaaclab/assets/robots/g1-29dof_wholebody_dex1/*.yaml",
     "assets/models/unitree_sim_isaaclab/assets/robots/g1-29dof_wholebody_dex1/*.usd",
