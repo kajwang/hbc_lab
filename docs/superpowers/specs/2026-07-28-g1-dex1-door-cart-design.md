@@ -286,4 +286,3 @@ Run a small IsaacLab smoke test for each task:
 - Confirm actor and critic observations are finite.
 - Confirm the high-level action dimension is 19.
 - Step once with zero actions.
-
