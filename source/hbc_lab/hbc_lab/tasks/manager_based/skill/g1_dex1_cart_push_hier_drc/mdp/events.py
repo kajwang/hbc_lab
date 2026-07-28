@@ -8,7 +8,7 @@ from isaaclab.utils import math as math_utils
 
 from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.mdp.events import G1Dex1HierDrcEventCfg
 
-from .progress import compute_cart_goal
+from .progress import compute_cart_goal, compute_planar_heading_quat
 
 
 CART_JOINT_NAMES = (
@@ -19,6 +19,7 @@ CART_JOINT_NAMES = (
     "RL_turn_joint",
     "RR_turn_joint",
 )
+CART_HANDLE_FRAME_OFFSET_QUAT = (0.70710678, 0.0, 0.70710678, 0.0)
 
 
 def reset_cart_articulation(
@@ -57,10 +58,16 @@ def reset_cart_articulation(
     lateral = torch.empty(env_ids.numel(), device=cart.device).uniform_(*cart_goal_displacement_y)
     env.cart_goal_forward[env_ids] = forward
     env.cart_goal_lateral[env_ids] = lateral
-    env.cart_initial_quat_w[env_ids] = root_state[:, 3:7]
+    handle_frame_offset_quat = torch.tensor(
+        CART_HANDLE_FRAME_OFFSET_QUAT,
+        device=cart.device,
+        dtype=root_state.dtype,
+    ).expand(env_ids.numel(), -1)
+    handle_quat_w = math_utils.quat_mul(root_state[:, 3:7], handle_frame_offset_quat)
+    env.cart_initial_quat_w[env_ids] = compute_planar_heading_quat(handle_quat_w)
     env.cart_target_root_pos_w[env_ids] = compute_cart_goal(
         root_state[:, :3],
-        root_state[:, 3:7],
+        env.cart_initial_quat_w[env_ids],
         forward,
         lateral,
     )

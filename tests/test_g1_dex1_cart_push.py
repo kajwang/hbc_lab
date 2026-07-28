@@ -60,6 +60,8 @@ def test_cart_progress_requires_both_grippers():
     source = _source("config/cart_env.py")
     assert "compute_handle_targets" in source
     assert "bimanual_grasp_confidence" in source
+    assert "cart_goal_pending" in source
+    assert "cart_goal_update_delay" in source
     assert "left_grasp" in source
     assert "right_grasp" in source
     assert "self.c_couple" in source

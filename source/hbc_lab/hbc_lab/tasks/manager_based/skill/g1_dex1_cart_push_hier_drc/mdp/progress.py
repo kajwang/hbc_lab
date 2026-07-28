@@ -27,10 +27,30 @@ def compute_handle_targets(
     handle_quat_w: torch.Tensor,
     half_width: float,
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    # The configured handle frame uses x as forward, y as up, and -z as left.
     local_offset = torch.zeros_like(handle_pos_w)
-    local_offset[:, 1] = half_width
+    local_offset[:, 2] = -half_width
     offset_w = _quat_apply(handle_quat_w, local_offset)
     return handle_pos_w + offset_w, handle_pos_w - offset_w
+
+
+def compute_planar_heading_quat(frame_quat_w: torch.Tensor, eps: float = 1.0e-6) -> torch.Tensor:
+    """Extract a yaw-only frame from the handle frame's projected forward axis."""
+    forward_local = torch.zeros(frame_quat_w.shape[0], 3, device=frame_quat_w.device, dtype=frame_quat_w.dtype)
+    forward_local[:, 0] = 1.0
+    forward_w = _quat_apply(frame_quat_w, forward_local)
+    forward_xy = forward_w[:, :2]
+    norm_xy = torch.linalg.norm(forward_xy, dim=-1)
+    yaw = torch.where(
+        norm_xy > eps,
+        torch.atan2(forward_xy[:, 1], forward_xy[:, 0]),
+        torch.zeros_like(norm_xy),
+    )
+    half_yaw = 0.5 * yaw
+    heading_quat_w = torch.zeros_like(frame_quat_w)
+    heading_quat_w[:, 0] = torch.cos(half_yaw)
+    heading_quat_w[:, 3] = torch.sin(half_yaw)
+    return heading_quat_w
 
 
 def compute_cart_goal(

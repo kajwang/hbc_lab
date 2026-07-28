@@ -61,15 +61,15 @@ def test_bimanual_grasp_uses_geometric_mean():
     assert torch.allclose(confidence, torch.tensor([1.0, 0.5, 0.0]))
 
 
-def test_handle_targets_follow_handle_translation_and_yaw():
+def test_handle_targets_follow_horizontal_handle_bar_axis():
     module = _load_module("cart_progress_targets_under_test", CART_PROGRESS_PATH)
-    identity = torch.tensor([1.0, 0.0, 0.0, 0.0])
-    yaw_90 = torch.tensor([2**-0.5, 0.0, 0.0, 2**-0.5])
+    roll_90 = torch.tensor([2**-0.5, 2**-0.5, 0.0, 0.0])
+    yaw_90_roll_90 = torch.tensor([0.5, 0.5, 0.5, 0.5])
     handle_pos = torch.tensor([[1.0, 2.0, 0.8], [0.0, 0.0, 0.8]])
 
     left, right = module.compute_handle_targets(
         handle_pos,
-        torch.stack((identity, yaw_90)),
+        torch.stack((roll_90, yaw_90_roll_90)),
         half_width=0.18,
     )
 
@@ -77,6 +77,20 @@ def test_handle_targets_follow_handle_translation_and_yaw():
     assert torch.allclose(right[0], torch.tensor([1.0, 1.82, 0.8]), atol=1.0e-6)
     assert torch.allclose(left[1], torch.tensor([-0.18, 0.0, 0.8]), atol=1.0e-6)
     assert torch.allclose(right[1], torch.tensor([0.18, 0.0, 0.8]), atol=1.0e-6)
+
+
+def test_cart_planar_heading_uses_projected_handle_forward_axis():
+    module = _load_module("cart_progress_heading_under_test", CART_PROGRESS_PATH)
+    roll_90 = torch.tensor([[2**-0.5, 2**-0.5, 0.0, 0.0]])
+    yaw_90_roll_90 = torch.tensor([[0.5, 0.5, 0.5, 0.5]])
+    heading = module.compute_planar_heading_quat(torch.cat((roll_90, yaw_90_roll_90), dim=0))
+    forward = module._quat_apply(
+        heading,
+        torch.tensor([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
+    )
+
+    assert torch.allclose(forward[0], torch.tensor([1.0, 0.0, 0.0]), atol=1.0e-6)
+    assert torch.allclose(forward[1], torch.tensor([0.0, 1.0, 0.0]), atol=1.0e-6)
 
 
 def test_cart_goal_uses_initial_cart_local_forward_and_lateral_axes():

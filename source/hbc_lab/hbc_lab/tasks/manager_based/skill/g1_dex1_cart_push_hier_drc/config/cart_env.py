@@ -41,6 +41,8 @@ class G1Dex1CartPushEnv(G1Dex1HierDrcEnv):
         self.cart_initial_quat_w = torch.zeros(num_envs, 4, device=device)
         self.cart_initial_quat_w[:, 0] = 1.0
         self.cart_target_root_pos_w = torch.zeros(num_envs, 3, device=device)
+        self.cart_goal_pending = torch.zeros(num_envs, dtype=torch.bool, device=device)
+        self.cart_goal_update_delay = torch.zeros(num_envs, dtype=torch.long, device=device)
         self.cart_manipulation_progress = CartManipulationProgress(self.transport_progress)
         super().__init__(cfg, render_mode, **kwargs)
 
@@ -58,6 +60,17 @@ class G1Dex1CartPushEnv(G1Dex1HierDrcEnv):
         return
 
     def _update_contact_target_regions(self, env_ids: torch.Tensor | None = None) -> None:
+        if env_ids is None:
+            env_ids = torch.arange(self.num_envs, device=self.device)
+        else:
+            env_ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.long)
+
+        delayed = self.cart_goal_update_delay[env_ids] > 0
+        if torch.any(delayed):
+            self.cart_goal_update_delay[env_ids[delayed]] -= 1
+            # Accessing the FrameTransformer here would cache the pre-forward pose.
+            return
+
         handle_pos_w, handle_quat_w = self._cart_handle_pose_w()
         left_target_w, right_target_w = compute_handle_targets(
             handle_pos_w,
@@ -65,11 +78,19 @@ class G1Dex1CartPushEnv(G1Dex1HierDrcEnv):
             half_width=self.cfg.cart_handle_target_half_width,
         )
         target_region = torch.stack((left_target_w, right_target_w), dim=1)
-        if env_ids is None:
-            env_ids = torch.arange(self.num_envs, device=self.device)
-        else:
-            env_ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.long)
         self.contact_label.set_target_region(env_ids, target_region[env_ids])
+
+        ready = self.cart_goal_pending[env_ids]
+        ready_ids = env_ids[ready]
+        if ready_ids.numel() > 0:
+            self.object_initial_pos_w[ready_ids] = handle_pos_w[ready_ids]
+            self.object_target_pos_w[ready_ids] = compute_cart_goal(
+                handle_pos_w[ready_ids],
+                self.cart_initial_quat_w[ready_ids],
+                self.cart_goal_forward[ready_ids],
+                self.cart_goal_lateral[ready_ids],
+            )
+            self.cart_goal_pending[ready_ids] = False
 
     def _compute_progress(self):
         self._update_contact_target_regions()
@@ -162,14 +183,8 @@ class G1Dex1CartPushEnv(G1Dex1HierDrcEnv):
 
     def _reset_hier_buffers(self, env_ids: torch.Tensor):
         super()._reset_hier_buffers(env_ids)
-        handle_pos_w = self._object_frame_pos_w()
-        self.object_initial_pos_w[env_ids] = handle_pos_w[env_ids]
-        self.object_target_pos_w[env_ids] = compute_cart_goal(
-            handle_pos_w[env_ids],
-            self.cart_initial_quat_w[env_ids],
-            self.cart_goal_forward[env_ids],
-            self.cart_goal_lateral[env_ids],
-        )
+        self.cart_goal_pending[env_ids] = True
+        self.cart_goal_update_delay[env_ids] = 1
         for buffer in (
             self.left_hand_object_distance,
             self.right_hand_object_distance,
@@ -200,3 +215,4 @@ class G1Dex1CartPushEnv(G1Dex1HierDrcEnv):
         self.extras["log"]["Cart/bimanual_grasp_mean"] = self.bimanual_grasp.mean()
         self.extras["log"]["Cart/transport_progress_mean"] = self.transport_progress.mean()
         self.extras["log"]["Cart/goal_distance_xy_mean"] = self.d_goal.mean()
+        self.extras["log"]["Cart/goal_pending_ratio"] = self.cart_goal_pending.float().mean()

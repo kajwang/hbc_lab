@@ -23,6 +23,8 @@ class G1Dex1DoorOpenEnv(G1Dex1HierDrcEnv):
         self.hinge_angle = torch.zeros(num_envs, device=device)
         self.inactive_left_contact = torch.zeros(num_envs, device=device)
         self.latch_released = torch.zeros(num_envs, dtype=torch.bool, device=device)
+        self.door_initial_pose_pending = torch.zeros(num_envs, dtype=torch.bool, device=device)
+        self.door_target_update_delay = torch.zeros(num_envs, dtype=torch.long, device=device)
         zeros = torch.zeros(num_envs, device=device)
         self.door_manipulation_progress = DoorManipulationProgress(zeros, zeros, zeros, zeros)
         self._door_frame_indices: dict[str, int] = {}
@@ -68,11 +70,24 @@ class G1Dex1DoorOpenEnv(G1Dex1HierDrcEnv):
             env_ids = torch.arange(self.num_envs, device=self.device)
         else:
             env_ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.long)
+
+        delayed = self.door_target_update_delay[env_ids] > 0
+        if torch.any(delayed):
+            self.door_target_update_delay[env_ids[delayed]] -= 1
+            # Accessing the FrameTransformer here would cache the pre-forward pose.
+            return
+
         handle_pos_w = self._door_handle_pos_w()
         target_region = torch.zeros(self.num_envs, 2, 3, device=self.device)
         target_region[:, RIGHT_HAND, :] = handle_pos_w
         self.contact_label.set_target_region(env_ids, target_region[env_ids])
         self.object_target_pos_w[env_ids] = self._door_goal_pos_w()[env_ids]
+
+        ready = self.door_initial_pose_pending[env_ids]
+        ready_ids = env_ids[ready]
+        if ready_ids.numel() > 0:
+            self.object_initial_pos_w[ready_ids] = handle_pos_w[ready_ids]
+            self.door_initial_pose_pending[ready_ids] = False
 
     def _simulate_door_latch(self) -> None:
         door = self.scene["object"]
@@ -122,7 +137,15 @@ class G1Dex1DoorOpenEnv(G1Dex1HierDrcEnv):
         self.active_contact_cos_sim = progress.cos_sim
         self.left_hand_contact = self._step_left_contact
         self.right_hand_contact = self._step_right_contact
-        self.inactive_left_contact = self._step_left_contact
+        self.inactive_left_contact = torch.stack(
+            (
+                self._step_link_contact["left_Link1_2"],
+                self._step_link_contact["left_Link1_3"],
+                self._step_link_contact["left_Link2_2"],
+                self._step_link_contact["left_Link2_3"],
+            ),
+            dim=-1,
+        ).amax(dim=-1)
 
         door = self.scene["object"]
         self.hinge_angle = door.data.joint_pos[:, self.hinge_joint_id]
@@ -155,8 +178,8 @@ class G1Dex1DoorOpenEnv(G1Dex1HierDrcEnv):
 
     def _reset_hier_buffers(self, env_ids: torch.Tensor):
         super()._reset_hier_buffers(env_ids)
-        self.object_initial_pos_w[env_ids] = self._door_handle_pos_w()[env_ids]
-        self.object_target_pos_w[env_ids] = self._door_goal_pos_w()[env_ids]
+        self.door_initial_pose_pending[env_ids] = True
+        self.door_target_update_delay[env_ids] = 1
         self.handle_angle[env_ids] = 0.0
         self.hinge_angle[env_ids] = 0.0
         self.inactive_left_contact[env_ids] = 0.0

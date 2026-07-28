@@ -53,6 +53,8 @@ def test_door_env_applies_latch_and_uses_grasp_for_drc():
     source = _read(CONFIG_ROOT / "door_env.py")
 
     assert "def _simulate_door_latch" in source
+    assert "door_initial_pose_pending" in source
+    assert "door_target_update_delay" in source
     assert "door_latch_stiffness" in source
     assert "door_latch_damping" in source
     assert "self._simulate_door_latch()" in source
