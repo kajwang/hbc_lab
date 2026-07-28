@@ -53,7 +53,7 @@ def test_door_articulation_and_frames_preserve_reference_parameters():
     assert '"joint_1":0.0' in source
     assert '"joint_2":0.0' in source
     assert 'joint_names_expr=["joint_1"],stiffness=0.0,damping=5.0,friction=0.2' in source
-    assert 'joint_names_expr=["joint_2"],stiffness=1.0,damping=1.0' in source
+    assert 'joint_names_expr=["joint_2"],stiffness=10.0,damping=1.0' in source
     assert 'prim_path="{ENV_REGEX_NS}/door/link_2",name="door_handle"' in source
     assert "pos=(-0.04,0.0,0.04)" in source
     assert 'prim_path="{ENV_REGEX_NS}/door/link_0",name="door_handle_goal"' in source
