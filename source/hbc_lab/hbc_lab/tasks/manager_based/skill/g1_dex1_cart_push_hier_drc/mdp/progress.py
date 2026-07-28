@@ -1,6 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import torch
+
+
+@dataclass
+class CartManipulationProgress:
+    transport_progress: torch.Tensor
 
 
 def _quat_apply(quat: torch.Tensor, vector: torch.Tensor) -> torch.Tensor:
