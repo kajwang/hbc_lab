@@ -78,8 +78,13 @@ def test_door_reset_and_success_use_articulation_state():
     cfg_source = _read(CONFIG_ROOT / "door_env_cfg.py")
     env_source = _read(CONFIG_ROOT / "door_env.py")
 
-    assert "reset_door_articulation" in events_source
-    assert 'door.find_joints(["joint_1", "joint_2"]' in events_source
+    assert "def set_default_root_state_from_current_pose" in events_source
+    assert "asset.data.root_link_pose_w[env_ids].clone()" in events_source
+    assert "set_default_object_root_state = EventTerm" in events_source
+    assert "func=mdp.reset_root_state_uniform" in events_source
+    assert "reset_object_joints = EventTerm" in events_source
+    assert "func=mdp.reset_joints_by_offset" in events_source
+    assert "reset_door_articulation" not in events_source
     assert '"x": (2.0, 2.0)' in events_source
     assert "door_hinge_target: float = math.radians(60.0)" in cfg_source
     assert "door_latch_handle_threshold: float = 0.5" in cfg_source
