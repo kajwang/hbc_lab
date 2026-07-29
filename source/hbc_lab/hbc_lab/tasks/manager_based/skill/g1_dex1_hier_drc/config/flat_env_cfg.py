@@ -9,10 +9,8 @@ from .g1_dex1_env_cfg import G1Dex1HierDrcEnvCfg
 class G1Dex1HierDrcFlatEnvCfg(G1Dex1HierDrcEnvCfg):
     def __post_init__(self):
         super().__post_init__()
-        self.commands.high_level.debug_vis = True
         self.commands.high_level.left_hand_probability = 0.5
         self.events.reset_object.params["pose_range"]["y"] = (-0.35, -0.05)
-        self.target_pose_debug_vis = True
         if self.scene.terrain.terrain_generator is not None:
             self.scene.terrain.terrain_generator.curriculum = False
 
@@ -23,7 +21,6 @@ class G1Dex1HierDrcFlatPlayEnvCfg(G1Dex1HierDrcFlatEnvCfg):
         super().__post_init__()
         self.scene.num_envs = 16
         self.object_mass_start_w = 1.0
-        self.commands.high_level.debug_vis = True
-        self.target_pose_debug_vis = True
+        self.enable_debug_visualization = True
         if self.scene.terrain.terrain_generator is not None:
             self.scene.terrain.terrain_generator.curriculum = False

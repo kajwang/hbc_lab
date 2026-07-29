@@ -49,6 +49,7 @@ class G1Dex1HierDrcEnvCfg(ManagerBasedRLEnvCfg):
 
     low_level_policy_path: str = ""
     allow_missing_low_level_policy: bool = False
+    enable_debug_visualization: bool = False
     target_pose_debug_vis: bool = False
     debug_fixed_gripper: bool = False
     debug_fixed_left_grip: float = 1.0
@@ -80,6 +81,13 @@ class G1Dex1HierDrcEnvCfg(ManagerBasedRLEnvCfg):
     object_mass_final_log_std: float = 0.45
     object_mass_min: float = 0.15
     object_mass_max: float = 25.0
+
+    def apply_debug_visualization(self) -> None:
+        enabled = self.enable_debug_visualization
+        self.commands.high_level.debug_vis = enabled
+        self.target_pose_debug_vis = enabled
+        getattr(self.scene, "object_frame").debug_vis = enabled
+        getattr(self.scene, "hand_center_frame").debug_vis = enabled
 
     def __post_init__(self):
         self.decimation = self.high_level_decimation * self.low_level_decimation

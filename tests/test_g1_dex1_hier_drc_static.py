@@ -109,6 +109,32 @@ def test_g1_dex1_object_visualization_only_shows_policy_position_inputs():
     assert "scales=right_target_scales" in env_source
 
 
+def test_g1_dex1_tasks_share_train_off_play_on_debug_visualization_switch():
+    cfg_source = _read(CONFIG_ROOT / "g1_dex1_env_cfg.py")
+    env_source = _read(CONFIG_ROOT / "g1_dex1_env.py")
+    flat_cfg_paths = (
+        CONFIG_ROOT / "flat_env_cfg.py",
+        HBC_ROOT / "tasks/manager_based/skill/g1_dex1_box_carry_hier_drc/config/flat_env_cfg.py",
+        HBC_ROOT / "tasks/manager_based/skill/g1_dex1_cart_push_hier_drc/config/flat_env_cfg.py",
+        HBC_ROOT / "tasks/manager_based/skill/g1_dex1_door_open_hier_drc/config/flat_env_cfg.py",
+    )
+
+    assert "enable_debug_visualization: bool = False" in cfg_source
+    assert "cfg.apply_debug_visualization()" in env_source
+    assert "self.commands.high_level.debug_vis = enabled" in cfg_source
+    assert "self.target_pose_debug_vis = enabled" in cfg_source
+    assert 'getattr(self.scene, "object_frame").debug_vis = enabled' in cfg_source
+    assert 'getattr(self.scene, "hand_center_frame").debug_vis = enabled' in cfg_source
+
+    for path in flat_cfg_paths:
+        source = _read(path)
+        train_source, play_source = source.split("class ", maxsplit=1)[1].split("class ", maxsplit=1)
+        assert "enable_debug_visualization = True" not in train_source
+        assert "enable_debug_visualization = True" in play_source
+        assert "commands.high_level.debug_vis" not in source
+        assert "target_pose_debug_vis" not in source
+
+
 def test_g1_dex1_actor_uses_ten_step_observation_history_only():
     observation_source = _read(MDP_ROOT / "observations.py")
     env_source = _read(CONFIG_ROOT / "g1_dex1_env.py")

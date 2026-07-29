@@ -61,6 +61,7 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
     body_joint_names = G1_29DOF_BODY_JOINT_NAMES
 
     def __init__(self, cfg: ManagerBasedRLEnvCfg, render_mode: str | None = None, **kwargs):
+        cfg.apply_debug_visualization()
         self.d_active_hand = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.d_goal = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
         self.c_contact = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
