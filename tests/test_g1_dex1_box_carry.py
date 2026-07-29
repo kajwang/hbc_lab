@@ -306,16 +306,15 @@ def test_box_carry_uses_command_state_and_ten_frame_actor_history():
     assert "matrix_from_quat" in base_observations_source
 
 
-def test_box_carry_visualizes_and_logs_assigned_face_targets():
+def test_box_carry_uses_shared_contact_target_visualization_and_logs_assigned_targets():
     env_source = _read(CONFIG_ROOT / "box_env.py")
     mdp_init_source = _read(MDP_ROOT / "__init__.py")
 
     assert (MDP_ROOT / "face_targets.py").exists()
     assert "face_targets" in mdp_init_source
-    assert "LEFT_FACE_TARGET_MARKER_CFG" in env_source
-    assert "RIGHT_FACE_TARGET_MARKER_CFG" in env_source
-    assert "self.left_face_target_visualizer.visualize(self.contact_label.target_region[:, 0, :])" in env_source
-    assert "self.right_face_target_visualizer.visualize(self.contact_label.target_region[:, 1, :])" in env_source
+    assert "LEFT_FACE_TARGET_MARKER_CFG" not in env_source
+    assert "RIGHT_FACE_TARGET_MARKER_CFG" not in env_source
+    assert "def _update_target_pose_visualization" not in env_source
     assert '"BoxCarry/left_face_target_error"' in env_source
     assert '"BoxCarry/right_face_target_error"' in env_source
     assert '"BoxCarry/left_positive_assignment_ratio"' in env_source

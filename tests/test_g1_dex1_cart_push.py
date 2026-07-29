@@ -52,6 +52,7 @@ def test_cart_is_bimanual_grasp_without_mass_curriculum():
     assert "fixed_effector_mask = (1.0, 1.0)" in source
     assert "ContactMode.GRASP" in source
     assert "object_mass_curriculum_enabled: bool = False" in source
+    assert "cart_handle_target_half_width: float = 0.12" in source
     assert "cart_goal_displacement_x: tuple[float, float] = (2.0, 4.0)" in source
     assert "cart_goal_displacement_y: tuple[float, float] = (-0.5, 0.5)" in source
 

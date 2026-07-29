@@ -63,13 +63,13 @@ def test_bimanual_grasp_uses_geometric_mean():
 
 def test_handle_targets_follow_horizontal_handle_bar_axis():
     module = _load_module("cart_progress_targets_under_test", CART_PROGRESS_PATH)
-    roll_90 = torch.tensor([2**-0.5, 2**-0.5, 0.0, 0.0])
-    yaw_90_roll_90 = torch.tensor([0.5, 0.5, 0.5, 0.5])
+    identity = torch.tensor([1.0, 0.0, 0.0, 0.0])
+    yaw_90 = torch.tensor([2**-0.5, 0.0, 0.0, 2**-0.5])
     handle_pos = torch.tensor([[1.0, 2.0, 0.8], [0.0, 0.0, 0.8]])
 
     left, right = module.compute_handle_targets(
         handle_pos,
-        torch.stack((roll_90, yaw_90_roll_90)),
+        torch.stack((identity, yaw_90)),
         half_width=0.18,
     )
 

@@ -27,9 +27,9 @@ def compute_handle_targets(
     handle_quat_w: torch.Tensor,
     half_width: float,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    # The configured handle frame uses x as forward, y as up, and -z as left.
+    # The configured handle frame uses x as forward, y along the crossbar, and z as up.
     local_offset = torch.zeros_like(handle_pos_w)
-    local_offset[:, 2] = -half_width
+    local_offset[:, 1] = half_width
     offset_w = _quat_apply(handle_quat_w, local_offset)
     return handle_pos_w + offset_w, handle_pos_w - offset_w
 

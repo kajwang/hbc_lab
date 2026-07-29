@@ -90,6 +90,25 @@ def test_g1_dex1_samples_both_active_hands_and_exposes_contact_label_mask():
     )[0]
 
 
+def test_g1_dex1_object_visualization_only_shows_policy_position_inputs():
+    env_source = _read(CONFIG_ROOT / "g1_dex1_env.py")
+
+    assert "OBJECT_INITIAL_MARKER_CFG" not in env_source
+    assert "object_initial_pose_visualizer" not in env_source
+    assert "FRAME_MARKER_CFG" not in env_source
+    assert "LEFT_CONTACT_TARGET_MARKER_CFG" in env_source
+    assert "RIGHT_CONTACT_TARGET_MARKER_CFG" in env_source
+    assert "self.target_pose_visualizer.visualize(self.object_target_pos_w)" in env_source
+    assert "self.left_contact_target_visualizer.visualize(" in env_source
+    assert "self.right_contact_target_visualizer.visualize(" in env_source
+    assert "self.contact_label.target_region[:, 0, :]" in env_source
+    assert "self.contact_label.target_region[:, 1, :]" in env_source
+    assert "self.contact_label.effector_mask[:, 0]" in env_source
+    assert "self.contact_label.effector_mask[:, 1]" in env_source
+    assert "scales=left_target_scales" in env_source
+    assert "scales=right_target_scales" in env_source
+
+
 def test_g1_dex1_actor_uses_ten_step_observation_history_only():
     observation_source = _read(MDP_ROOT / "observations.py")
     env_source = _read(CONFIG_ROOT / "g1_dex1_env.py")

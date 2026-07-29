@@ -4,7 +4,6 @@ import torch
 import isaaclab.sim as sim_utils
 from isaaclab.envs import ManagerBasedRLEnv, ManagerBasedRLEnvCfg, VecEnvStepReturn
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
-from isaaclab.markers.config import FRAME_MARKER_CFG
 
 from hbc_lab.assets.objects import OBJECT_PLATFORM_HEIGHT
 from hbc_lab.assets.robots.unitree import G1_29DOF_BODY_JOINT_NAMES
@@ -36,20 +35,24 @@ TARGET_OBJECT_MARKER_CFG = VisualizationMarkersCfg(
         ),
     },
 )
-TARGET_OBJECT_FRAME_MARKER_CFG = FRAME_MARKER_CFG.replace(prim_path="/Visuals/G1Dex1HierDrc/object_goal_frame")
-TARGET_OBJECT_FRAME_MARKER_CFG.markers["frame"].scale = (0.08, 0.08, 0.08)
-
-OBJECT_INITIAL_MARKER_CFG = VisualizationMarkersCfg(
-    prim_path="/Visuals/G1Dex1HierDrc/object_initial",
+LEFT_CONTACT_TARGET_MARKER_CFG = VisualizationMarkersCfg(
+    prim_path="/Visuals/G1Dex1HierDrc/left_contact_target",
     markers={
-        "initial": sim_utils.SphereCfg(
-            radius=0.045,
-            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.0, 0.75, 1.0)),
+        "target": sim_utils.SphereCfg(
+            radius=0.035,
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.1, 0.35, 1.0)),
         ),
     },
 )
-OBJECT_INITIAL_FRAME_MARKER_CFG = FRAME_MARKER_CFG.replace(prim_path="/Visuals/G1Dex1HierDrc/object_initial_frame")
-OBJECT_INITIAL_FRAME_MARKER_CFG.markers["frame"].scale = (0.06, 0.06, 0.06)
+RIGHT_CONTACT_TARGET_MARKER_CFG = VisualizationMarkersCfg(
+    prim_path="/Visuals/G1Dex1HierDrc/right_contact_target",
+    markers={
+        "target": sim_utils.SphereCfg(
+            radius=0.035,
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(1.0, 0.55, 0.05)),
+        ),
+    },
+)
 
 
 class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
@@ -136,9 +139,8 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self._default_joint_pos = None
         self._reset_contact_accumulators()
         self.target_pose_visualizer = None
-        self.target_pose_frame_visualizer = None
-        self.object_initial_pose_visualizer = None
-        self.object_initial_pose_frame_visualizer = None
+        self.left_contact_target_visualizer = None
+        self.right_contact_target_visualizer = None
 
     def _reset_contact_accumulators(self) -> None:
         self._step_left_contact = torch.zeros(self.num_envs, device=self.device)
@@ -504,19 +506,21 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
             return
         if self.target_pose_visualizer is None:
             self.target_pose_visualizer = VisualizationMarkers(TARGET_OBJECT_MARKER_CFG)
-            self.target_pose_frame_visualizer = VisualizationMarkers(TARGET_OBJECT_FRAME_MARKER_CFG)
-            self.object_initial_pose_visualizer = VisualizationMarkers(OBJECT_INITIAL_MARKER_CFG)
-            self.object_initial_pose_frame_visualizer = VisualizationMarkers(OBJECT_INITIAL_FRAME_MARKER_CFG)
+            self.left_contact_target_visualizer = VisualizationMarkers(LEFT_CONTACT_TARGET_MARKER_CFG)
+            self.right_contact_target_visualizer = VisualizationMarkers(RIGHT_CONTACT_TARGET_MARKER_CFG)
             self.target_pose_visualizer.set_visibility(True)
-            self.target_pose_frame_visualizer.set_visibility(True)
-            self.object_initial_pose_visualizer.set_visibility(True)
-            self.object_initial_pose_frame_visualizer.set_visibility(True)
-        target_quat_w = torch.zeros(self.num_envs, 4, device=self.device)
-        target_quat_w[:, 0] = 1.0
-        self.object_initial_pose_visualizer.visualize(self.object_initial_pos_w)
-        self.object_initial_pose_frame_visualizer.visualize(self.object_initial_pos_w, target_quat_w)
+            self.left_contact_target_visualizer.set_visibility(True)
+            self.right_contact_target_visualizer.set_visibility(True)
+
+        left_target_region = self.contact_label.target_region[:, 0, :]
+        right_target_region = self.contact_label.target_region[:, 1, :]
+        left_active = self.contact_label.effector_mask[:, 0]
+        right_active = self.contact_label.effector_mask[:, 1]
+        left_target_scales = left_active.to(dtype=left_target_region.dtype).unsqueeze(-1).expand(-1, 3)
+        right_target_scales = right_active.to(dtype=right_target_region.dtype).unsqueeze(-1).expand(-1, 3)
         self.target_pose_visualizer.visualize(self.object_target_pos_w)
-        self.target_pose_frame_visualizer.visualize(self.object_target_pos_w, target_quat_w)
+        self.left_contact_target_visualizer.visualize(left_target_region, scales=left_target_scales)
+        self.right_contact_target_visualizer.visualize(right_target_region, scales=right_target_scales)
 
     def step(self, action: torch.Tensor) -> VecEnvStepReturn:
         self.prev_high_level_action = self.last_high_level_action.clone()

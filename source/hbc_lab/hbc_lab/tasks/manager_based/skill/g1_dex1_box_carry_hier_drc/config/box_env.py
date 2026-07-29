@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import torch
-import isaaclab.sim as sim_utils
-from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
 
 from hbc_lab.assets.objects import BOX_CUBE_CENTER_Z, BOX_CUBE_SIZE
 from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.config.g1_dex1_env import (
@@ -21,26 +19,6 @@ from ..mdp.face_targets import (
     select_assigned_face_targets,
 )
 from ..mdp.scenes import BOX_SUPPORT_CONTACT_KEYS, HAND_CENTER_FRAME_NAME
-
-
-LEFT_FACE_TARGET_MARKER_CFG = VisualizationMarkersCfg(
-    prim_path="/Visuals/G1Dex1BoxCarry/left_face_target",
-    markers={
-        "target": sim_utils.SphereCfg(
-            radius=0.035,
-            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.1, 0.35, 1.0)),
-        ),
-    },
-)
-RIGHT_FACE_TARGET_MARKER_CFG = VisualizationMarkersCfg(
-    prim_path="/Visuals/G1Dex1BoxCarry/right_face_target",
-    markers={
-        "target": sim_utils.SphereCfg(
-            radius=0.035,
-            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(1.0, 0.55, 0.05)),
-        ),
-    },
-)
 
 
 class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
@@ -71,8 +49,6 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
             dtype=torch.bool,
             device=cfg.sim.device,
         )
-        self.left_face_target_visualizer = None
-        self.right_face_target_visualizer = None
         super().__init__(cfg, render_mode, **kwargs)
 
     def _reset_contact_accumulators(self) -> None:
@@ -235,19 +211,6 @@ class G1Dex1BoxCarryEnv(G1Dex1HierDrcEnv):
         self.d_goal_xy[env_ids] = 0.0
         self.left_face_uses_positive[env_ids] = False
         self.face_assignment_pending[env_ids] = True
-
-    def _update_target_pose_visualization(self) -> None:
-        super()._update_target_pose_visualization()
-        if not getattr(self.cfg, "target_pose_debug_vis", False):
-            return
-        self._update_contact_target_regions()
-        if self.left_face_target_visualizer is None:
-            self.left_face_target_visualizer = VisualizationMarkers(LEFT_FACE_TARGET_MARKER_CFG)
-            self.right_face_target_visualizer = VisualizationMarkers(RIGHT_FACE_TARGET_MARKER_CFG)
-            self.left_face_target_visualizer.set_visibility(True)
-            self.right_face_target_visualizer.set_visibility(True)
-        self.left_face_target_visualizer.visualize(self.contact_label.target_region[:, 0, :])
-        self.right_face_target_visualizer.visualize(self.contact_label.target_region[:, 1, :])
 
     def _log_link_contact_diagnostics(self, active_hand: torch.Tensor | None = None) -> None:
         super()._log_link_contact_diagnostics(active_hand)
