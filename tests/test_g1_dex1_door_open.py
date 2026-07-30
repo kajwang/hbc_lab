@@ -38,15 +38,12 @@ def test_door_contact_label_fixes_right_hand_grasp():
     assert "self.inactive_left_contact" in env_source
 
 
-def test_door_actor_observes_normalized_handle_and_hinge_state():
+def test_door_observations_reuse_shared_contact_label_interface():
     source = _read(MDP_ROOT / "observations.py")
 
-    assert "def door_articulation_state" in source
-    assert "env.handle_angle / env.cfg.door_latch_handle_threshold" in source
-    assert "env.hinge_angle / env.cfg.door_hinge_target" in source
-    assert "door_state = ObsTerm(func=door_articulation_state)" in source
-    policy_source = source.split("class PolicyCfg", maxsplit=1)[1].split("class CriticCfg", maxsplit=1)[0]
-    assert "door_state" in policy_source
+    assert "G1Dex1HierDrcObservationsCfg" in source
+    assert "door_articulation_state" not in source
+    assert "door_state" not in source
 
 
 def test_door_env_applies_latch_and_uses_grasp_for_drc():
@@ -64,13 +61,17 @@ def test_door_env_applies_latch_and_uses_grasp_for_drc():
     assert "def _update_object_mass_curriculum" in source
 
 
-def test_door_reward_gates_hinge_progress_by_handle_progress():
-    source = _read(MDP_ROOT / "rewards.py")
+def test_door_reward_uses_shared_spatial_progress_and_grasp_state():
+    reward_source = _read(MDP_ROOT / "rewards.py")
+    env_source = _read(CONFIG_ROOT / "door_env.py")
 
-    assert "env.door_manipulation_progress.reward" in source
-    assert "inactive_left_contact_penalty" in source
-    assert "object_fall" not in source
-    assert "hier_drc_reward" in source
+    assert "compute_spatial_progress" in reward_source
+    assert "0.7 * progress + 0.3 * env.c_couple" in reward_source
+    assert "door_manipulation_progress" not in reward_source
+    assert "inactive_left_contact_penalty" in reward_source
+    assert "object_fall" not in reward_source
+    assert "hier_drc_reward" in reward_source
+    assert "self.d_goal = torch.norm(self._door_handle_pos_w() - self.object_target_pos_w, dim=-1)" in env_source
 
 
 def test_door_reset_and_success_use_articulation_state():

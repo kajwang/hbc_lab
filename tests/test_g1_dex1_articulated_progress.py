@@ -1,5 +1,4 @@
 import importlib.util
-import math
 import sys
 from pathlib import Path
 
@@ -24,31 +23,14 @@ def _load_module(name: str, path: Path):
     return module
 
 
-def test_door_progress_requires_near_complete_handle_turn_before_hinge_reward():
+def test_door_spatial_progress_is_normalized_and_clamps_regression():
     module = _load_module("door_progress_under_test", DOOR_PROGRESS_PATH)
-    progress = module.compute_door_manipulation_progress(
-        handle_angle=torch.tensor([0.0, 0.25, 0.5]),
-        hinge_angle=torch.tensor([0.0, math.radians(30.0), math.radians(60.0)]),
-        latch_threshold=0.5,
-        hinge_target=math.radians(60.0),
+    progress = module.compute_spatial_progress(
+        initial_distance=torch.tensor([2.0, 2.0, 0.0]),
+        current_distance=torch.tensor([1.0, 3.0, 0.0]),
     )
 
-    assert torch.allclose(progress.handle_progress, torch.tensor([0.0, 0.5, 1.0]))
-    assert torch.allclose(progress.hinge_progress, torch.tensor([0.0, 0.5, 1.0]))
-    assert torch.allclose(progress.handle_gate, torch.tensor([0.0, 0.0, 1.0]))
-    assert torch.allclose(progress.reward, torch.tensor([0.3, 0.425, 1.3]), atol=1.0e-6)
-
-
-def test_door_handle_gate_is_smooth_near_latch_release():
-    module = _load_module("door_progress_gate_under_test", DOOR_PROGRESS_PATH)
-    progress = module.compute_door_manipulation_progress(
-        handle_angle=torch.tensor([0.40, 0.45, 0.50]),
-        hinge_angle=torch.zeros(3),
-        latch_threshold=0.5,
-        hinge_target=math.radians(60.0),
-    )
-
-    assert torch.allclose(progress.handle_gate, torch.tensor([0.0, 0.5, 1.0]), atol=1.0e-6)
+    assert torch.allclose(progress, torch.tensor([0.5, 0.0, 0.0]), atol=1.0e-6)
 
 
 def test_bimanual_grasp_uses_geometric_mean():

@@ -15,9 +15,13 @@ from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.mdp.rewards import (
     task_success_reward,
 )
 
+from .progress import compute_spatial_progress
+
 
 def door_manip_reward(env) -> torch.Tensor:
-    return env.door_manipulation_progress.reward
+    initial_distance = torch.norm(env.object_initial_pos_w - env.object_target_pos_w, dim=-1)
+    progress = compute_spatial_progress(initial_distance, env.d_goal)
+    return 0.7 * progress + 0.3 * env.c_couple
 
 
 def hier_drc_reward(

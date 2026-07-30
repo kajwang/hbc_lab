@@ -42,7 +42,7 @@ DOOR_CFG = ArticulationCfg(
         ),
         "handle": ImplicitActuatorCfg(
             joint_names_expr=["joint_2"],
-            stiffness=10.0,
+            stiffness=1.0,
             damping=1.0,
         ),
     },

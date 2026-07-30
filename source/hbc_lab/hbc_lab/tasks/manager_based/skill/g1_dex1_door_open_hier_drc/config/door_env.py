@@ -12,8 +12,6 @@ from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.mdp.contact_progress imp
 from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.mdp.drc_math import compute_drc_weights, update_ema
 from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.mdp.scenes import HAND_CENTER_FRAME_NAME
 
-from ..mdp.progress import DoorManipulationProgress, compute_door_manipulation_progress
-
 
 class G1Dex1DoorOpenEnv(G1Dex1HierDrcEnv):
     def __init__(self, cfg, render_mode: str | None = None, **kwargs):
@@ -25,8 +23,6 @@ class G1Dex1DoorOpenEnv(G1Dex1HierDrcEnv):
         self.latch_released = torch.zeros(num_envs, dtype=torch.bool, device=device)
         self.door_initial_pose_pending = torch.zeros(num_envs, dtype=torch.bool, device=device)
         self.door_target_update_delay = torch.zeros(num_envs, dtype=torch.long, device=device)
-        zeros = torch.zeros(num_envs, device=device)
-        self.door_manipulation_progress = DoorManipulationProgress(zeros, zeros, zeros, zeros)
         self._door_frame_indices: dict[str, int] = {}
         super().__init__(cfg, render_mode, **kwargs)
 
@@ -150,13 +146,7 @@ class G1Dex1DoorOpenEnv(G1Dex1HierDrcEnv):
         door = self.scene["object"]
         self.hinge_angle = door.data.joint_pos[:, self.hinge_joint_id]
         self.handle_angle = door.data.joint_pos[:, self.handle_joint_id]
-        self.door_manipulation_progress = compute_door_manipulation_progress(
-            self.handle_angle,
-            self.hinge_angle,
-            latch_threshold=self.cfg.door_latch_handle_threshold,
-            hinge_target=self.cfg.door_hinge_target,
-        )
-        self.d_goal = torch.clamp(self.cfg.door_hinge_target - self.hinge_angle, min=0.0)
+        self.d_goal = torch.norm(self._door_handle_pos_w() - self.object_target_pos_w, dim=-1)
         self.c_contact = update_ema(self.c_contact, progress.contact, alpha=0.2)
         self.c_opposition = update_ema(self.c_opposition, progress.pinch, alpha=0.2)
         self.c_pinch = update_ema(self.c_pinch, progress.pinch, alpha=0.2)
@@ -193,8 +183,5 @@ class G1Dex1DoorOpenEnv(G1Dex1HierDrcEnv):
         super()._log_link_contact_diagnostics(active_hand)
         self.extras["log"]["Door/handle_angle_mean"] = self.handle_angle.mean()
         self.extras["log"]["Door/hinge_angle_mean"] = self.hinge_angle.mean()
-        self.extras["log"]["Door/handle_progress_mean"] = self.door_manipulation_progress.handle_progress.mean()
-        self.extras["log"]["Door/handle_gate_mean"] = self.door_manipulation_progress.handle_gate.mean()
-        self.extras["log"]["Door/hinge_progress_mean"] = self.door_manipulation_progress.hinge_progress.mean()
         self.extras["log"]["Door/latch_released_ratio"] = self.latch_released.float().mean()
         self.extras["log"]["Door/inactive_left_contact_mean"] = self.inactive_left_contact.mean()
