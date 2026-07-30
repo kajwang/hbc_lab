@@ -11,6 +11,7 @@ class G1Dex1CartPushPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     empirical_normalization = False
     policy = RslRlPpoActorCriticCfg(
         init_noise_std=0.6,
+        noise_std_type="log",
         actor_hidden_dims=[256, 256, 128],
         critic_hidden_dims=[512, 256, 128],
         activation="elu",

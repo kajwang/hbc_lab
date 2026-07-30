@@ -26,6 +26,7 @@ def test_door_registration_and_agent_config():
     assert "HBC-Isaac-G1-Dex1-DoorOpen-HierDrc-Play-v0" in task_source
     assert "play_env_cfg_entry_point" in task_source
     assert 'experiment_name = "g1_dex1_door_open_hier_drc"' in agent_source
+    assert 'noise_std_type="log"' in agent_source
 
 
 def test_cart_registration_and_agent_config():
@@ -41,6 +42,7 @@ def test_cart_registration_and_agent_config():
     assert "HBC-Isaac-G1-Dex1-CartPush-HierDrc-Play-v0" in task_source
     assert "play_env_cfg_entry_point" in task_source
     assert 'experiment_name = "g1_dex1_cart_push_hier_drc"' in agent_source
+    assert 'noise_std_type="log"' in agent_source
 
 
 def test_task_entry_point_imports_both_articulated_tasks():

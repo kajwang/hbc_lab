@@ -28,12 +28,24 @@ def joint_vel_explosion(
     return torch.any(is_exploded, dim=1)
 
 
+def nonfinite_sim_state(env: ManagerBasedRLEnv) -> torch.Tensor:
+    invalid = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+    for asset_name in ("robot", "object"):
+        asset = env.scene[asset_name]
+        for attribute in ("root_pos_w", "root_quat_w", "root_lin_vel_w", "root_ang_vel_w", "joint_pos", "joint_vel"):
+            tensor = getattr(asset.data, attribute, None)
+            if tensor is not None:
+                invalid |= ~torch.isfinite(tensor.reshape(env.num_envs, -1)).all(dim=1)
+    return invalid
+
+
 @configclass
 class G1Dex1HierDrcTerminationsCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
     base_height = DoneTerm(func=mdp.root_height_below_minimum, params={"minimum_height": 0.25})
     bad_orientation = DoneTerm(func=mdp.bad_orientation, params={"limit_angle": 1.2})
     joint_vel_explosion = DoneTerm(func=joint_vel_explosion, params={"threshold": 1000.0})
+    nonfinite_sim_state = DoneTerm(func=nonfinite_sim_state)
 
 
 @configclass
@@ -59,8 +71,12 @@ class G1Dex1HierDrcEnvCfg(ManagerBasedRLEnvCfg):
     action_dim: int = 19
     low_level_obs_history_length: int = 5
     low_level_action_scale: float = 0.25
-    low_level_action_clip: float | None = None
+    low_level_action_clip: float = 5.0
+    finite_action_clip: float = 1.0
     finite_obs_clip: float = 100.0
+    finite_reward_clip: float = 1000.0
+    contact_force_clip: float = 1000.0
+    progress_distance_clip: float = 20.0
     hand_contact_force_threshold: float = 2.0
     close_distance: float = 0.20
     close_gate_width: float = 0.10
@@ -95,7 +111,7 @@ class G1Dex1HierDrcEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.dt = 0.005
         self.sim.render_interval = self.low_level_decimation
         self.sim.physics_material = self.scene.terrain.physics_material
-        self.sim.physx.gpu_max_rigid_patch_count = 10 * 2**15
+        self.sim.physx.gpu_max_rigid_patch_count = 40 * 2**15
         self.scene.contact_forces.update_period = self.sim.dt
         for sensor_name in LEFT_GRIPPER_CONTACT_SENSOR_NAMES + RIGHT_GRIPPER_CONTACT_SENSOR_NAMES:
             getattr(self.scene, sensor_name).update_period = self.sim.dt

@@ -24,6 +24,7 @@ from ..mdp.scenes import (
     LEFT_GRIPPER_CONTACT_SENSOR_NAMES,
     RIGHT_GRIPPER_CONTACT_SENSOR_NAMES,
 )
+from ..mdp.safety import nested_nonfinite_ratio, nonfinite_ratio, sanitize_nested_tensors, sanitize_tensor
 
 
 TARGET_OBJECT_MARKER_CFG = VisualizationMarkersCfg(
@@ -101,6 +102,10 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self.prev_high_level_action = torch.zeros(cfg.scene.num_envs, cfg.action_dim, device=cfg.sim.device)
         self._high_level_action_saturation_ratio = torch.zeros((), device=cfg.sim.device)
         self._high_level_action_abs_mean = torch.zeros((), device=cfg.sim.device)
+        self._nonfinite_high_level_action_ratio = torch.zeros((), device=cfg.sim.device)
+        self._nonfinite_low_level_action_ratio = torch.zeros((), device=cfg.sim.device)
+        self._nonfinite_reward_ratio = torch.zeros((), device=cfg.sim.device)
+        self._nonfinite_observation_ratio = torch.zeros((), device=cfg.sim.device)
         self._last_low_level_action = torch.zeros(cfg.scene.num_envs, len(self.body_joint_names), device=cfg.sim.device)
         self.active_hand = torch.zeros(cfg.scene.num_envs, dtype=torch.long, device=cfg.sim.device)
         self.contact_label = ContactLabel.from_active_hand(
@@ -249,19 +254,63 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
     def _apply_low_level_action(self, low_action: torch.Tensor) -> torch.Tensor:
         robot = self.scene["robot"]
         joint_ids, default_joint_pos = self._get_low_level_joint_info()
-        if self.cfg.low_level_action_clip is not None:
-            low_action = torch.nan_to_num(
-                low_action,
-                nan=0.0,
-                posinf=self.cfg.low_level_action_clip,
-                neginf=-self.cfg.low_level_action_clip,
-            )
-            low_action = torch.clamp(low_action, -self.cfg.low_level_action_clip, self.cfg.low_level_action_clip)
-        else:
-            low_action = torch.nan_to_num(low_action, nan=0.0)
+        low_action = sanitize_tensor(low_action, finite_clip=self.cfg.low_level_action_clip)
         joint_target = default_joint_pos + self.cfg.low_level_action_scale * low_action
         robot.set_joint_position_target(joint_target, joint_ids=joint_ids)
         return low_action
+
+    def _sanitize_buffer(
+        self,
+        tensor: torch.Tensor,
+        finite_clip: float | None = None,
+        min_value: float | None = None,
+        max_value: float | None = None,
+    ) -> None:
+        tensor.copy_(sanitize_tensor(tensor, finite_clip=finite_clip))
+        if min_value is not None or max_value is not None:
+            tensor.clamp_(min=min_value, max=max_value)
+
+    def _sanitize_progress_buffers(self) -> None:
+        distance_clip = self.cfg.progress_distance_clip
+        force_clip = self.cfg.contact_force_clip
+        for name in ("d_active_hand", "d_goal"):
+            self._sanitize_buffer(getattr(self, name), distance_clip, 0.0, distance_clip)
+        for name in (
+            "c_contact",
+            "c_couple",
+            "c_grasp",
+            "c_opposition",
+            "c_pinch",
+            "active_grip",
+            "active_left_finger_contact",
+            "active_right_finger_contact",
+            "active_opposition",
+            "active_pinch_score",
+            "left_hand_contact",
+            "right_hand_contact",
+            "W_app",
+            "W_couple",
+            "W_manip",
+        ):
+            self._sanitize_buffer(getattr(self, name), 1.0, 0.0, 1.0)
+        for name in ("active_left_finger_force", "active_right_finger_force"):
+            self._sanitize_buffer(getattr(self, name), force_clip, 0.0, force_clip)
+        self._sanitize_buffer(self.active_contact_cos_sim, 1.0, -1.0, 1.0)
+        for tensor in self._step_link_contact.values():
+            self._sanitize_buffer(tensor, 1.0, 0.0, 1.0)
+        for tensor in self._step_link_force.values():
+            self._sanitize_buffer(tensor, force_clip, 0.0, force_clip)
+
+    def _sanitize_rollout_outputs(self) -> None:
+        self._nonfinite_reward_ratio = nonfinite_ratio(self.reward_buf).detach()
+        self._nonfinite_observation_ratio = nested_nonfinite_ratio(self.obs_buf).detach()
+        self.reward_buf.copy_(sanitize_tensor(self.reward_buf, finite_clip=self.cfg.finite_reward_clip))
+        self.obs_buf = sanitize_nested_tensors(self.obs_buf, finite_clip=self.cfg.finite_obs_clip)
+        if "observations" in self.extras:
+            self.extras["observations"] = sanitize_nested_tensors(
+                self.extras["observations"],
+                finite_clip=self.cfg.finite_obs_clip,
+            )
 
     def _apply_gripper_command(self):
         self.gripper_controller.apply(self.command_state.left_grip, self.command_state.right_grip)
@@ -526,9 +575,15 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
     def step(self, action: torch.Tensor) -> VecEnvStepReturn:
         self.prev_high_level_action = self.last_high_level_action.clone()
         raw_high_level_action = action.to(self.device)
-        self._high_level_action_saturation_ratio = (torch.abs(raw_high_level_action) >= 1.0).float().mean().detach()
-        self._high_level_action_abs_mean = torch.abs(raw_high_level_action).mean().detach()
-        self.last_high_level_action = torch.clamp(raw_high_level_action, -1.0, 1.0)
+        self._nonfinite_high_level_action_ratio = nonfinite_ratio(raw_high_level_action).detach()
+        self.last_high_level_action = sanitize_tensor(
+            raw_high_level_action,
+            finite_clip=self.cfg.finite_action_clip,
+        )
+        self._high_level_action_saturation_ratio = (
+            torch.abs(self.last_high_level_action) >= self.cfg.finite_action_clip
+        ).float().mean().detach()
+        self._high_level_action_abs_mean = torch.abs(self.last_high_level_action).mean().detach()
         self.command_state = decode_high_level_action(self.last_high_level_action, self.command_state, self.action_limits)
         self._apply_debug_gripper_override()
         self.high_level_command.set_command(
@@ -543,12 +598,18 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self.recorder_manager.record_pre_step()
         is_rendering = self.sim.has_gui() or self.sim.has_rtx_sensors()
         self._reset_contact_accumulators()
+        self._nonfinite_low_level_action_ratio.zero_()
         for _ in range(self.cfg.high_level_decimation):
             low_obs = self.low_level_obs_builder.build(self.command_state, self._last_low_level_action)
             if self.low_level_policy is None:
                 raw_low_action = torch.zeros(self.num_envs, len(self.body_joint_names), device=self.device)
             else:
                 raw_low_action = self.low_level_policy(low_obs)
+            self._nonfinite_low_level_action_ratio = torch.maximum(
+                self._nonfinite_low_level_action_ratio,
+                nonfinite_ratio(raw_low_action).detach(),
+            )
+            raw_low_action = sanitize_tensor(raw_low_action, finite_clip=self.cfg.low_level_action_clip)
             for _ in range(self.cfg.low_level_decimation):
                 self._sim_step_counter += 1
                 self._apply_low_level_action(raw_low_action)
@@ -565,6 +626,7 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self.episode_length_buf += 1
         self.common_step_counter += 1
         self._compute_progress()
+        self._sanitize_progress_buffers()
         self._check_success()
         step_success_count = self.task_succeeded.sum().float().detach()
         step_active_hand = self.active_hand.clone()
@@ -588,6 +650,7 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         if "interval" in self.event_manager.available_modes:
             self.event_manager.apply(mode="interval", dt=self.step_dt)
         self.obs_buf = self.observation_manager.compute(update_history=True)
+        self._sanitize_rollout_outputs()
         self._update_target_pose_visualization()
         self.extras["log"]["DRC/d_active_hand_mean"] = self.d_active_hand.mean()
         self.extras["log"]["DRC/c_contact_mean"] = self.c_contact.mean()
@@ -630,6 +693,10 @@ class G1Dex1HierDrcEnv(ManagerBasedRLEnv):
         self.extras["log"]["HL/right_grip_mean"] = self.command_state.right_grip.mean()
         self.extras["log"]["HL/action_saturation_ratio"] = self._high_level_action_saturation_ratio
         self.extras["log"]["HL/action_abs_mean"] = self._high_level_action_abs_mean
+        self.extras["log"]["Safety/nonfinite_high_level_action_ratio"] = self._nonfinite_high_level_action_ratio
+        self.extras["log"]["Safety/nonfinite_low_level_action_ratio"] = self._nonfinite_low_level_action_ratio
+        self.extras["log"]["Safety/nonfinite_reward_ratio"] = self._nonfinite_reward_ratio
+        self.extras["log"]["Safety/nonfinite_observation_ratio"] = self._nonfinite_observation_ratio
         self._log_high_level_diagnostics()
         self.extras["log"]["Task/success_count"] = step_success_count
         return self.obs_buf, self.reward_buf, self.reset_terminated, self.reset_time_outs, self.extras

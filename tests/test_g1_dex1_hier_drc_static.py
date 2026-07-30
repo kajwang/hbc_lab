@@ -178,6 +178,26 @@ def test_g1_dex1_uses_trainable_checkpoint_policy_std():
     assert "entropy_coef=0.005" in agent_source
 
 
+def test_g1_dex1_hier_env_guards_physics_and_rollout_finite_values():
+    cfg_source = _read(CONFIG_ROOT / "g1_dex1_env_cfg.py")
+    env_source = _read(CONFIG_ROOT / "g1_dex1_env.py")
+
+    assert "low_level_action_clip: float = 5.0" in cfg_source
+    assert "finite_action_clip: float = 1.0" in cfg_source
+    assert "finite_reward_clip: float = 1000.0" in cfg_source
+    assert "self.sim.physx.gpu_max_rigid_patch_count = 40 * 2**15" in cfg_source
+    assert "nonfinite_sim_state = DoneTerm(func=nonfinite_sim_state)" in cfg_source
+    assert "self.last_high_level_action = sanitize_tensor(" in env_source
+    assert "raw_high_level_action," in env_source
+    assert "sanitize_tensor(raw_low_action" in env_source
+    assert "self._sanitize_progress_buffers()" in env_source
+    assert "self._sanitize_rollout_outputs()" in env_source
+    assert 'self.extras["log"]["Safety/nonfinite_high_level_action_ratio"]' in env_source
+    assert 'self.extras["log"]["Safety/nonfinite_low_level_action_ratio"]' in env_source
+    assert 'self.extras["log"]["Safety/nonfinite_reward_ratio"]' in env_source
+    assert 'self.extras["log"]["Safety/nonfinite_observation_ratio"]' in env_source
+
+
 def test_g1_dex1_goal_is_sampled_behind_init_relative_to_robot():
     events_source = _read(MDP_ROOT / "events.py")
 
