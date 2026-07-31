@@ -14,6 +14,7 @@ from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.mdp.scenes import HAND_C
 
 from ..mdp.progress import (
     CartManipulationProgress,
+    bimanual_approach_distance,
     bimanual_grasp_confidence,
     compute_cart_goal,
     compute_handle_targets,
@@ -33,6 +34,8 @@ class G1Dex1CartPushEnv(G1Dex1HierDrcEnv):
         self.right_contact = torch.zeros(num_envs, device=device)
         self.left_grasp = torch.zeros(num_envs, device=device)
         self.right_grasp = torch.zeros(num_envs, device=device)
+        self.independent_contact = torch.zeros(num_envs, device=device)
+        self.independent_grasp = torch.zeros(num_envs, device=device)
         self.bimanual_contact = torch.zeros(num_envs, device=device)
         self.bimanual_grasp = torch.zeros(num_envs, device=device)
         self.transport_progress = torch.zeros(num_envs, device=device)
@@ -40,11 +43,12 @@ class G1Dex1CartPushEnv(G1Dex1HierDrcEnv):
         self.cart_goal_lateral = torch.zeros(num_envs, device=device)
         self.cart_initial_quat_w = torch.zeros(num_envs, 4, device=device)
         self.cart_initial_quat_w[:, 0] = 1.0
-        self.cart_target_root_pos_w = torch.zeros(num_envs, 3, device=device)
         self.cart_goal_pending = torch.zeros(num_envs, dtype=torch.bool, device=device)
         self.cart_goal_update_delay = torch.zeros(num_envs, dtype=torch.long, device=device)
+        self.cart_frame_refresh_pending = torch.zeros(num_envs, dtype=torch.bool, device=device)
         self.cart_manipulation_progress = CartManipulationProgress(self.transport_progress)
         super().__init__(cfg, render_mode, **kwargs)
+        self.object_mass.copy_(self.scene["object"].data.default_mass.sum(dim=-1))
 
     def _cart_handle_pose_w(self) -> tuple[torch.Tensor, torch.Tensor]:
         frame = self.scene["object_frame"].data
@@ -59,15 +63,26 @@ class G1Dex1CartPushEnv(G1Dex1HierDrcEnv):
     def _update_object_mass_curriculum(self) -> None:
         return
 
+    def _update_cart_goal_while_settling(self, handle_pos_w: torch.Tensor) -> None:
+        settling_ids = self.cart_goal_pending.nonzero(as_tuple=False).squeeze(-1)
+        if settling_ids.numel() == 0:
+            return
+        self.object_initial_pos_w[settling_ids] = handle_pos_w[settling_ids]
+        self.object_target_pos_w[settling_ids] = compute_cart_goal(
+            handle_pos_w[settling_ids],
+            self.cart_initial_quat_w[settling_ids],
+            self.cart_goal_forward[settling_ids],
+            self.cart_goal_lateral[settling_ids],
+        )
+
     def _update_contact_target_regions(self, env_ids: torch.Tensor | None = None) -> None:
         if env_ids is None:
             env_ids = torch.arange(self.num_envs, device=self.device)
         else:
             env_ids = torch.as_tensor(env_ids, device=self.device, dtype=torch.long)
 
-        delayed = self.cart_goal_update_delay[env_ids] > 0
-        if torch.any(delayed):
-            self.cart_goal_update_delay[env_ids[delayed]] -= 1
+        if torch.any(self.cart_frame_refresh_pending[env_ids]):
+            self.cart_frame_refresh_pending[env_ids] = False
             # Accessing the FrameTransformer here would cache the pre-forward pose.
             return
 
@@ -79,21 +94,18 @@ class G1Dex1CartPushEnv(G1Dex1HierDrcEnv):
         )
         target_region = torch.stack((left_target_w, right_target_w), dim=1)
         self.contact_label.set_target_region(env_ids, target_region[env_ids])
-
-        ready = self.cart_goal_pending[env_ids]
-        ready_ids = env_ids[ready]
-        if ready_ids.numel() > 0:
-            self.object_initial_pos_w[ready_ids] = handle_pos_w[ready_ids]
-            self.object_target_pos_w[ready_ids] = compute_cart_goal(
-                handle_pos_w[ready_ids],
-                self.cart_initial_quat_w[ready_ids],
-                self.cart_goal_forward[ready_ids],
-                self.cart_goal_lateral[ready_ids],
-            )
-            self.cart_goal_pending[ready_ids] = False
+        self._update_cart_goal_while_settling(handle_pos_w)
 
     def _compute_progress(self):
         self._update_contact_target_regions()
+        settling_ids = (
+            self.cart_goal_pending & (self.cart_goal_update_delay > 0)
+        ).nonzero(as_tuple=False).squeeze(-1)
+        if settling_ids.numel() > 0:
+            self.cart_goal_update_delay[settling_ids] -= 1
+            finished_ids = settling_ids[self.cart_goal_update_delay[settling_ids] == 0]
+            self.cart_goal_pending[finished_ids] = False
+
         hand_center_pos_w = self.scene[HAND_CENTER_FRAME_NAME].data.target_pos_w
         target_region = self.contact_label.target_region
         left_distance = torch.norm(hand_center_pos_w[:, 0, :] - target_region[:, 0, :], dim=-1)
@@ -120,13 +132,15 @@ class G1Dex1CartPushEnv(G1Dex1HierDrcEnv):
 
         self.left_hand_object_distance = left_distance
         self.right_hand_object_distance = right_distance
-        self.d_active_hand = 0.5 * (left_distance + right_distance)
+        self.d_active_hand = bimanual_approach_distance(left_distance, right_distance)
         self.left_grip = self.command_state.left_grip.squeeze(-1)
         self.right_grip = self.command_state.right_grip.squeeze(-1)
         self.left_contact = left_progress.contact
         self.right_contact = right_progress.contact
         self.left_grasp = left_progress.grasp
         self.right_grasp = right_progress.grasp
+        self.independent_contact = 0.5 * (self.left_contact + self.right_contact)
+        self.independent_grasp = 0.5 * (self.left_grasp + self.right_grasp)
         self.bimanual_contact = bimanual_grasp_confidence(self.left_contact, self.right_contact)
         self.bimanual_grasp = bimanual_grasp_confidence(self.left_grasp, self.right_grasp)
 
@@ -184,7 +198,8 @@ class G1Dex1CartPushEnv(G1Dex1HierDrcEnv):
     def _reset_hier_buffers(self, env_ids: torch.Tensor):
         super()._reset_hier_buffers(env_ids)
         self.cart_goal_pending[env_ids] = True
-        self.cart_goal_update_delay[env_ids] = 1
+        self.cart_goal_update_delay[env_ids] = self.cfg.cart_goal_settle_steps
+        self.cart_frame_refresh_pending[env_ids] = True
         for buffer in (
             self.left_hand_object_distance,
             self.right_hand_object_distance,
@@ -194,6 +209,8 @@ class G1Dex1CartPushEnv(G1Dex1HierDrcEnv):
             self.right_contact,
             self.left_grasp,
             self.right_grasp,
+            self.independent_contact,
+            self.independent_grasp,
             self.bimanual_contact,
             self.bimanual_grasp,
             self.transport_progress,
@@ -211,6 +228,8 @@ class G1Dex1CartPushEnv(G1Dex1HierDrcEnv):
         self.extras["log"]["Cart/right_contact_mean"] = self.right_contact.mean()
         self.extras["log"]["Cart/left_grasp_mean"] = self.left_grasp.mean()
         self.extras["log"]["Cart/right_grasp_mean"] = self.right_grasp.mean()
+        self.extras["log"]["Cart/independent_contact_mean"] = self.independent_contact.mean()
+        self.extras["log"]["Cart/independent_grasp_mean"] = self.independent_grasp.mean()
         self.extras["log"]["Cart/bimanual_contact_mean"] = self.bimanual_contact.mean()
         self.extras["log"]["Cart/bimanual_grasp_mean"] = self.bimanual_grasp.mean()
         self.extras["log"]["Cart/transport_progress_mean"] = self.transport_progress.mean()

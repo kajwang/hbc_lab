@@ -43,6 +43,16 @@ def test_bimanual_grasp_uses_geometric_mean():
     assert torch.allclose(confidence, torch.tensor([1.0, 0.5, 0.0]))
 
 
+def test_bimanual_approach_distance_uses_farther_hand():
+    module = _load_module("cart_progress_distance_under_test", CART_PROGRESS_PATH)
+    distance = module.bimanual_approach_distance(
+        torch.tensor([0.1, 0.4, 0.2]),
+        torch.tensor([0.3, 0.2, 0.2]),
+    )
+
+    assert torch.allclose(distance, torch.tensor([0.3, 0.4, 0.2]))
+
+
 def test_handle_targets_follow_horizontal_handle_bar_axis():
     module = _load_module("cart_progress_targets_under_test", CART_PROGRESS_PATH)
     identity = torch.tensor([1.0, 0.0, 0.0, 0.0])

@@ -33,7 +33,9 @@ def test_cart_scene_uses_articulated_cart_and_inner_pad_contacts():
 
 def test_cart_reset_samples_local_goal_and_resets_all_joints():
     source = _source("mdp/events.py")
-    assert "compute_cart_goal" in source
+    assert "compute_planar_heading_quat" in source
+    assert "env.cart_goal_forward" in source
+    assert "env.cart_goal_lateral" in source
     for joint_name in (
         "RL_joint",
         "RR_joint",
@@ -49,9 +51,11 @@ def test_cart_reset_samples_local_goal_and_resets_all_joints():
 
 def test_cart_is_bimanual_grasp_without_mass_curriculum():
     source = _source("config/cart_env_cfg.py")
+    env_source = _source("config/cart_env.py")
     assert "fixed_effector_mask = (1.0, 1.0)" in source
     assert "ContactMode.GRASP" in source
     assert "object_mass_curriculum_enabled: bool = False" in source
+    assert 'self.scene["object"].data.default_mass.sum(dim=-1)' in env_source
     assert "cart_handle_target_half_width: float = 0.12" in source
     assert "cart_goal_displacement_x: tuple[float, float] = (2.0, 4.0)" in source
     assert "cart_goal_displacement_y: tuple[float, float] = (-0.5, 0.5)" in source
@@ -60,6 +64,7 @@ def test_cart_is_bimanual_grasp_without_mass_curriculum():
 def test_cart_progress_requires_both_grippers():
     source = _source("config/cart_env.py")
     assert "compute_handle_targets" in source
+    assert "bimanual_approach_distance" in source
     assert "bimanual_grasp_confidence" in source
     assert "cart_goal_pending" in source
     assert "cart_goal_update_delay" in source
@@ -69,10 +74,34 @@ def test_cart_progress_requires_both_grippers():
     assert "self.W_manip" in source
 
 
+def test_cart_goal_freezes_only_after_physics_settling_steps():
+    env_source = _source("config/cart_env.py")
+    cfg_source = _source("config/cart_env_cfg.py")
+    update_source = env_source.split("def _update_contact_target_regions", 1)[1].split(
+        "def _compute_progress", 1
+    )[0]
+
+    assert "cart_goal_settle_steps: int = 2" in cfg_source
+    assert "cart_goal_update_delay" not in update_source
+    assert "self._update_cart_goal_while_settling(handle_pos_w)" in env_source
+    assert "self.cart_goal_update_delay[settling_ids] -= 1" in env_source
+
+
 def test_cart_manipulation_reward_is_dense_transport_progress():
     source = _source("mdp/rewards.py")
     assert "0.3 + progress.transport_progress" in source
     assert "object_fall" not in source
+
+
+def test_cart_couple_reward_credits_each_gripper_but_drc_requires_both():
+    env_source = _source("config/cart_env.py")
+    rewards_source = _source("mdp/rewards.py")
+
+    assert "self.independent_contact" in env_source
+    assert "self.independent_grasp" in env_source
+    assert "0.2 * env.independent_contact" in rewards_source
+    assert "0.2 * env.independent_grasp" in rewards_source
+    assert "self.c_couple = update_ema(self.c_couple, self.bimanual_grasp" in env_source
 
 
 def test_cart_keeps_low_level_interface_inherited():

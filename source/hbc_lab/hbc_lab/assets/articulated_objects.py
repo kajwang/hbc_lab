@@ -84,7 +84,7 @@ CART_CFG = ArticulationCfg(
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 0.15),
+        pos=(0.0, 0.0, 0.0),
         rot=(0.5, 0.5, -0.5, -0.5),
         joint_pos={
             "RL_joint": 0.0,

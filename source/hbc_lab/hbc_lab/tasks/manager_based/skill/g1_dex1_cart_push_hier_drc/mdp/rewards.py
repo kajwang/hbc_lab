@@ -35,8 +35,8 @@ def couple_reward(env) -> torch.Tensor:
     )
     return (
         0.4 * both_near
-        + 0.2 * env.bimanual_contact
-        + 0.2 * env.bimanual_grasp
+        + 0.2 * env.independent_contact
+        + 0.2 * env.independent_grasp
         + 0.2 * gated_close
         - 0.2 * early_close
     )

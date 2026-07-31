@@ -31,7 +31,7 @@ def test_articulated_usd_assets_are_exact_local_copies():
         "door/door_0_bot.usd",
     ]
     assert _sha256(DOOR_USD) == "cb8a34e14f5ce98adb005e1f414e5d1b8bf3b8dabc55e8d711810ff31e1f8c12"
-    assert _sha256(CART_USD) == "9a803b0992815314f36d822b35dce3eceeb82f14eb772ec50593a1290e587b97"
+    assert _sha256(CART_USD) == "966ef7619331a3c765a4bdc46ab9b403373e5e6917f5dd625b01f1a3ebd03984"
 
 
 def test_articulated_configs_use_repo_relative_paths_and_are_packaged():
@@ -65,7 +65,7 @@ def test_cart_articulation_and_handle_frame_preserve_reference_parameters():
 
     assert "CART_CFG=ArticulationCfg(" in source
     assert "scale=(0.8,0.8,0.8)" in source
-    assert "pos=(0.0,0.0,0.15)" in source
+    assert "pos=(0.0,0.0,0.0)" in source
     assert "rot=(0.5,0.5,-0.5,-0.5)" in source
     for joint_name in ("RL_joint", "RR_joint", "FL_joint", "FR_joint", "RL_turn_joint", "RR_turn_joint"):
         assert f'"{joint_name}":0.0' in source

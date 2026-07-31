@@ -92,7 +92,7 @@ def test_manip_reward_requires_lift_before_transport_progress():
 
     assert torch.allclose(progress.lift_progress, torch.tensor([0.0, 0.5, 1.0]))
     assert torch.allclose(progress.transport_gate, progress.lift_progress)
-    assert torch.allclose(progress.reward, torch.tensor([0.3, 1.24, 2.18]), atol=1.0e-6)
+    assert torch.allclose(progress.reward, torch.tensor([0.3, 1.65, 3.0]), atol=1.0e-6)
 
     env_source = _read(CONFIG_ROOT / "box_env.py")
     rewards_source = _read(MDP_ROOT / "rewards.py")

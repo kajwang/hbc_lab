@@ -8,7 +8,7 @@ from isaaclab.utils import math as math_utils
 
 from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.mdp.events import G1Dex1HierDrcEventCfg
 
-from .progress import compute_cart_goal, compute_planar_heading_quat
+from .progress import compute_planar_heading_quat
 
 
 CART_JOINT_NAMES = (
@@ -65,12 +65,6 @@ def reset_cart_articulation(
     ).expand(env_ids.numel(), -1)
     handle_quat_w = math_utils.quat_mul(root_state[:, 3:7], handle_frame_offset_quat)
     env.cart_initial_quat_w[env_ids] = compute_planar_heading_quat(handle_quat_w)
-    env.cart_target_root_pos_w[env_ids] = compute_cart_goal(
-        root_state[:, :3],
-        env.cart_initial_quat_w[env_ids],
-        forward,
-        lateral,
-    )
 
 
 @configclass

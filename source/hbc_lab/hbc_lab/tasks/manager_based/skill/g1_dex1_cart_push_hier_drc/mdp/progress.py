@@ -22,6 +22,15 @@ def bimanual_grasp_confidence(left_grasp: torch.Tensor, right_grasp: torch.Tenso
     return torch.sqrt(product)
 
 
+def bimanual_approach_distance(
+    left_distance: torch.Tensor,
+    right_distance: torch.Tensor,
+) -> torch.Tensor:
+    if left_distance.shape != right_distance.shape:
+        raise ValueError("left_distance and right_distance must have identical shapes")
+    return torch.maximum(left_distance, right_distance)
+
+
 def compute_handle_targets(
     handle_pos_w: torch.Tensor,
     handle_quat_w: torch.Tensor,
