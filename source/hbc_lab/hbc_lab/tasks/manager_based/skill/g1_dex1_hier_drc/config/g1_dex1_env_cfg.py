@@ -71,7 +71,7 @@ class G1Dex1HierDrcEnvCfg(ManagerBasedRLEnvCfg):
     action_dim: int = 19
     low_level_obs_history_length: int = 5
     low_level_action_scale: float = 0.25
-    low_level_action_clip: float = 5.0
+    low_level_action_clip: float | None = None
     finite_action_clip: float = 1.0
     finite_obs_clip: float = 100.0
     finite_reward_clip: float = 1000.0

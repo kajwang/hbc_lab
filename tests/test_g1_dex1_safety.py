@@ -28,6 +28,15 @@ def test_sanitize_tensor_replaces_nonfinite_values_and_clips_finite_outliers():
     torch.testing.assert_close(result, torch.tensor([0.0, 0.0, 0.0, 100.0, -100.0, 2.0]))
 
 
+def test_sanitize_tensor_without_clip_preserves_finite_policy_actions():
+    safety = _load_safety_module()
+    value = torch.tensor([float("nan"), float("inf"), -float("inf"), 8.0, -12.0])
+
+    result = safety.sanitize_tensor(value, finite_clip=None)
+
+    torch.testing.assert_close(result, torch.tensor([0.0, 0.0, 0.0, 8.0, -12.0]))
+
+
 def test_nonfinite_ratio_and_nested_sanitization_cover_actor_and_critic_observations():
     safety = _load_safety_module()
     observations = {

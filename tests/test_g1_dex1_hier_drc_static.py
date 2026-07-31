@@ -182,7 +182,7 @@ def test_g1_dex1_hier_env_guards_physics_and_rollout_finite_values():
     cfg_source = _read(CONFIG_ROOT / "g1_dex1_env_cfg.py")
     env_source = _read(CONFIG_ROOT / "g1_dex1_env.py")
 
-    assert "low_level_action_clip: float = 5.0" in cfg_source
+    assert "low_level_action_clip: float | None = None" in cfg_source
     assert "finite_action_clip: float = 1.0" in cfg_source
     assert "finite_reward_clip: float = 1000.0" in cfg_source
     assert "self.sim.physx.gpu_max_rigid_patch_count = 40 * 2**15" in cfg_source
