@@ -13,12 +13,17 @@ from isaaclab.utils import configclass
 from isaaclab.utils.math import (
     combine_frame_transforms,
     compute_pose_error,
-    quat_apply,
-    quat_apply_inverse,
     quat_from_euler_xyz,
+    quat_inv,
     quat_mul,
     quat_unique,
     yaw_quat,
+)
+
+from ..pose_transforms import (
+    compose_wrist_chain_quat,
+    hand_base_to_hand_center_pose,
+    posture_anchor_pose_w,
 )
 
 if TYPE_CHECKING:
@@ -43,6 +48,25 @@ class SphericalPoseCommand(CommandTerm):
         self.pose_command_b = torch.zeros(self.num_envs, 7, device=self.device)
         self.pose_command_b[:, 3] = 1.0
         self.pose_command_w = torch.zeros_like(self.pose_command_b)
+        self.fixed_palm_quat = None
+        self.hand_center_offset = None
+        self.wrist_parent_body_idx = None
+        if cfg.orientation_mode == "wrist_chain":
+            if cfg.wrist_parent_body_name is None or cfg.fixed_palm_quat is None or cfg.hand_center_offset is None:
+                raise ValueError(
+                    "wrist_chain commands require wrist_parent_body_name, fixed_palm_quat, and hand_center_offset"
+                )
+            self.wrist_parent_body_idx = self.robot.find_bodies(cfg.wrist_parent_body_name)[0][0]
+            self.fixed_palm_quat = torch.tensor(
+                cfg.fixed_palm_quat,
+                device=self.device,
+                dtype=self.pose_command_b.dtype,
+            )
+            self.hand_center_offset = torch.tensor(
+                cfg.hand_center_offset,
+                device=self.device,
+                dtype=self.pose_command_b.dtype,
+            )
 
         self.metrics["position_error"] = torch.zeros(self.num_envs, device=self.device)
         self.metrics["orientation_error"] = torch.zeros(self.num_envs, device=self.device)
@@ -70,30 +94,34 @@ class SphericalPoseCommand(CommandTerm):
     def _anchor_pose_w(self) -> tuple[torch.Tensor, torch.Tensor]:
         anchor_pos_w = self.robot.data.body_pos_w[:, self.anchor_body_idx].clone()
         root_yaw_quat = yaw_quat(self.robot.data.root_quat_w)
-        anchor_quat_w = root_yaw_quat
+        anchor_pitch = torch.zeros(self.num_envs, device=self.device)
         if self.cfg.anchor_pitch_command_name is not None:
             anchor_pitch_command = self.env.command_manager.get_command(self.cfg.anchor_pitch_command_name)
             anchor_pitch = (
                 anchor_pitch_command[:, self.cfg.anchor_pitch_command_index] * self.cfg.anchor_pitch_scale
                 + self.cfg.anchor_pitch_offset
             )
+        if self.cfg.anchor_height_command_name is not None:
+            anchor_height_command = self.env.command_manager.get_command(self.cfg.anchor_height_command_name)
+            posture_command = torch.stack(
+                (anchor_height_command[:, self.cfg.anchor_height_command_index], anchor_pitch),
+                dim=-1,
+            )
+            return posture_anchor_pose_w(
+                self.robot.data.root_pos_w,
+                self.robot.data.root_quat_w,
+                anchor_pos_w,
+                self.env.scene.env_origins,
+                posture_command,
+                self.cfg.anchor_height_offset,
+            )
+
+        anchor_quat_w = root_yaw_quat
+        if self.cfg.anchor_pitch_command_name is not None:
             zeros = torch.zeros(self.num_envs, device=self.device)
             pitch_quat = quat_from_euler_xyz(zeros, anchor_pitch, zeros)
             anchor_quat_w = quat_mul(anchor_quat_w, pitch_quat)
-        if self.cfg.anchor_height_command_name is not None:
-            anchor_height_command = self.env.command_manager.get_command(self.cfg.anchor_height_command_name)
-            root_cmd_pos_w = self.robot.data.root_pos_w.clone()
-            root_cmd_pos_w[:, 2] = (
-                self.env.scene.env_origins[:, 2]
-                + anchor_height_command[:, self.cfg.anchor_height_command_index]
-            )
-            root_to_anchor_w = anchor_pos_w - self.robot.data.root_pos_w
-            root_to_anchor_yaw = quat_apply_inverse(root_yaw_quat, root_to_anchor_w)
-            anchor_offset_b = torch.zeros_like(root_to_anchor_yaw)
-            anchor_offset_b[:, 1] = root_to_anchor_yaw[:, 1]
-            anchor_offset_b[:, 2] = self.cfg.anchor_height_offset
-            anchor_pos_w = root_cmd_pos_w + quat_apply(anchor_quat_w, anchor_offset_b)
-        elif self.cfg.fixed_anchor_height is not None:
+        if self.cfg.fixed_anchor_height is not None:
             anchor_pos_w[:, 2] = self.cfg.fixed_anchor_height
         return anchor_pos_w, anchor_quat_w
 
@@ -139,7 +167,24 @@ class SphericalPoseCommand(CommandTerm):
         euler_angles[:, 0].uniform_(*self.cfg.ranges.roll)
         euler_angles[:, 1].uniform_(*self.cfg.ranges.ee_pitch)
         euler_angles[:, 2].uniform_(*self.cfg.ranges.yaw)
-        if self.cfg.orientation_mode == "local_delta":
+        if self.cfg.orientation_mode == "wrist_chain":
+            assert (
+                self.wrist_parent_body_idx is not None
+                and self.fixed_palm_quat is not None
+                and self.hand_center_offset is not None
+            )
+            _, anchor_quat_w = self._anchor_pose_w()
+            wrist_parent_quat_w = self.robot.data.body_quat_w[env_ids, self.wrist_parent_body_idx]
+            wrist_parent_quat_b = quat_mul(quat_inv(anchor_quat_w[env_ids]), wrist_parent_quat_w)
+            wrist_chain_quat = compose_wrist_chain_quat(euler_angles, self.fixed_palm_quat)
+            quat = quat_mul(wrist_parent_quat_b, wrist_chain_quat)
+            hand_center_pos, quat = hand_base_to_hand_center_pose(
+                self.pose_command_b[env_ids, :3],
+                quat,
+                self.hand_center_offset,
+            )
+            self.pose_command_b[env_ids, :3] = hand_center_pos
+        elif self.cfg.orientation_mode == "local_delta":
             delta_quat = quat_from_euler_xyz(euler_angles[:, 0], euler_angles[:, 1], euler_angles[:, 2])
             zeros = torch.zeros_like(euler_angles[:, 2])
             nominal_yaw = torch.full_like(euler_angles[:, 2], self.cfg.orientation_yaw_offset)
@@ -199,6 +244,9 @@ class SphericalLevelPoseCommandCfg(CommandTermCfg):
     anchor_pitch_offset: float = 0.0
     orientation_mode: str = "azimuth"
     orientation_yaw_offset: float = 0.0
+    wrist_parent_body_name: str | None = None
+    fixed_palm_quat: tuple[float, float, float, float] | None = None
+    hand_center_offset: tuple[float, float, float] | None = None
     fixed_anchor_height: float | None = None
     make_quat_unique: bool = False
 

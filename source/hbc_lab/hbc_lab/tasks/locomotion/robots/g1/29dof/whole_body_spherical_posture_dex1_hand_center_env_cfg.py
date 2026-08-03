@@ -38,8 +38,8 @@ HAND_CENTER_FRAME_MARKER_CFG = FRAME_MARKER_CFG.replace(
     prim_path="/Visuals/G1Dex1LowLevel/hand_center_frame"
 )
 HAND_CENTER_FRAME_MARKER_CFG.markers["frame"].scale = (0.07, 0.07, 0.07)
-WRIST_LOCAL_ROLL_LIMIT = 1.70
-WRIST_LOCAL_PITCH_YAW_LIMIT = 1.00
+WRIST_ROLL_LIMIT = math.radians(100.0)
+WRIST_PITCH_YAW_LIMIT = math.radians(80.0)
 
 
 @configclass
@@ -80,7 +80,7 @@ class Dex1HandCenterActionsCfg(velocity_env_cfg.ActionsCfg):
 
 @configclass
 class Dex1HandCenterCommandsCfg(SphericalPostureWholeBodyCommandsCfg):
-    """Shoulder-anchored spherical commands for Dex1 hand centers."""
+    """Sample hand bases spherically, then map physical wrist angles to hand centers."""
 
     left_wrist_pose = mdp.SphericalLevelPoseCommandCfg(
         asset_name="robot",
@@ -88,14 +88,20 @@ class Dex1HandCenterCommandsCfg(SphericalPostureWholeBodyCommandsCfg):
         anchor_body_name="left_shoulder_pitch_link",
         tracked_frame_sensor_name=HAND_CENTER_FRAME_NAME,
         tracked_frame_index=0,
-        fixed_anchor_height=1.23,
+        anchor_height_command_name="posture_command",
+        anchor_height_command_index=0,
+        anchor_height_offset=0.43,
+        anchor_pitch_command_name="posture_command",
+        anchor_pitch_command_index=1,
         resampling_time_range=(2.0, 4.0),
         debug_vis=True,
         make_quat_unique=True,
-        orientation_mode="local_delta",
-        orientation_yaw_offset=-0.5 * math.pi,
+        orientation_mode="wrist_chain",
+        wrist_parent_body_name="left_elbow_link",
+        fixed_palm_quat=(0.70710677, 0.0, 0.0, -0.70710677),
+        hand_center_offset=(0.0, 0.09734, 0.0142),
         ranges=mdp.SphericalLevelPoseCommandCfg.Ranges(
-            l=(0.30, 0.48),
+            l=(0.20, 0.38),
             pitch=(-0.5 * math.pi, 0.0),
             azimuth=(0.0, 0.5 * math.pi),
             roll=(-0.50, 0.50),
@@ -103,12 +109,12 @@ class Dex1HandCenterCommandsCfg(SphericalPostureWholeBodyCommandsCfg):
             yaw=(-0.12, 0.12),
         ),
         limit_ranges=mdp.SphericalLevelPoseCommandCfg.Ranges(
-            l=(0.22, 0.68),
+            l=(0.12, 0.58),
             pitch=(-0.5 * math.pi, 0.0),
             azimuth=(0.0, 0.5 * math.pi),
-            roll=(-WRIST_LOCAL_ROLL_LIMIT, WRIST_LOCAL_ROLL_LIMIT),
-            ee_pitch=(-WRIST_LOCAL_PITCH_YAW_LIMIT, WRIST_LOCAL_PITCH_YAW_LIMIT),
-            yaw=(-WRIST_LOCAL_PITCH_YAW_LIMIT, WRIST_LOCAL_PITCH_YAW_LIMIT),
+            roll=(-WRIST_ROLL_LIMIT, WRIST_ROLL_LIMIT),
+            ee_pitch=(-WRIST_PITCH_YAW_LIMIT, WRIST_PITCH_YAW_LIMIT),
+            yaw=(-WRIST_PITCH_YAW_LIMIT, WRIST_PITCH_YAW_LIMIT),
         ),
     )
 
@@ -118,14 +124,20 @@ class Dex1HandCenterCommandsCfg(SphericalPostureWholeBodyCommandsCfg):
         anchor_body_name="right_shoulder_pitch_link",
         tracked_frame_sensor_name=HAND_CENTER_FRAME_NAME,
         tracked_frame_index=1,
-        fixed_anchor_height=1.23,
+        anchor_height_command_name="posture_command",
+        anchor_height_command_index=0,
+        anchor_height_offset=0.43,
+        anchor_pitch_command_name="posture_command",
+        anchor_pitch_command_index=1,
         resampling_time_range=(2.0, 4.0),
         debug_vis=True,
         make_quat_unique=True,
-        orientation_mode="local_delta",
-        orientation_yaw_offset=-0.5 * math.pi,
+        orientation_mode="wrist_chain",
+        wrist_parent_body_name="right_elbow_link",
+        fixed_palm_quat=(0.7073882, 0.0, 0.0, -0.7068252),
+        hand_center_offset=(0.0, 0.09734, 0.0142),
         ranges=mdp.SphericalLevelPoseCommandCfg.Ranges(
-            l=(0.30, 0.48),
+            l=(0.20, 0.38),
             pitch=(-0.5 * math.pi, 0.0),
             azimuth=(-0.5 * math.pi, 0.0),
             roll=(-0.50, 0.50),
@@ -133,12 +145,12 @@ class Dex1HandCenterCommandsCfg(SphericalPostureWholeBodyCommandsCfg):
             yaw=(-0.12, 0.12),
         ),
         limit_ranges=mdp.SphericalLevelPoseCommandCfg.Ranges(
-            l=(0.22, 0.68),
+            l=(0.12, 0.58),
             pitch=(-0.5 * math.pi, 0.0),
             azimuth=(-0.5 * math.pi, 0.0),
-            roll=(-WRIST_LOCAL_ROLL_LIMIT, WRIST_LOCAL_ROLL_LIMIT),
-            ee_pitch=(-WRIST_LOCAL_PITCH_YAW_LIMIT, WRIST_LOCAL_PITCH_YAW_LIMIT),
-            yaw=(-WRIST_LOCAL_PITCH_YAW_LIMIT, WRIST_LOCAL_PITCH_YAW_LIMIT),
+            roll=(-WRIST_ROLL_LIMIT, WRIST_ROLL_LIMIT),
+            ee_pitch=(-WRIST_PITCH_YAW_LIMIT, WRIST_PITCH_YAW_LIMIT),
+            yaw=(-WRIST_PITCH_YAW_LIMIT, WRIST_PITCH_YAW_LIMIT),
         ),
     )
 

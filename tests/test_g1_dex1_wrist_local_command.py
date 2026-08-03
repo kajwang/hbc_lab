@@ -41,7 +41,10 @@ def test_dex1_command_uses_hand_base_sampling_and_physical_wrist_limits():
     assert source.count('anchor_pitch_command_name="posture_command"') == 2
     assert source.count("anchor_height_offset=0.43") == 2
     assert source.count("hand_center_offset=(0.0, 0.09734, 0.0142)") == 2
+    assert 'wrist_parent_body_name="left_elbow_link"' in source
+    assert 'wrist_parent_body_name="right_elbow_link"' in source
     assert "compose_wrist_chain_quat" in command_source
+    assert "quat_mul(wrist_parent_quat_b, wrist_chain_quat)" in command_source
     assert "hand_base_to_hand_center_pose" in command_source
 
 
