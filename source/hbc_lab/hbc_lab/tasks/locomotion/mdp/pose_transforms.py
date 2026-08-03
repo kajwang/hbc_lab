@@ -3,8 +3,8 @@ from __future__ import annotations
 import torch
 from isaaclab.utils.math import (
     quat_apply,
-    quat_apply_inverse,
     quat_from_euler_xyz,
+    quat_inv,
     quat_mul,
     yaw_quat,
 )
@@ -28,7 +28,7 @@ def posture_anchor_pose_w(
     root_cmd_pos_w[:, 2] = env_origins[:, 2] + posture_command[:, 0]
 
     root_to_shoulder_w = shoulder_pos_w - root_pos_w
-    root_to_shoulder_yaw = quat_apply_inverse(root_yaw_quat, root_to_shoulder_w)
+    root_to_shoulder_yaw = quat_apply(quat_inv(root_yaw_quat), root_to_shoulder_w)
     anchor_offset = torch.zeros_like(root_to_shoulder_yaw)
     anchor_offset[:, 1] = root_to_shoulder_yaw[:, 1]
     anchor_offset[:, 2] = anchor_height_offset
