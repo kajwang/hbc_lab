@@ -35,6 +35,10 @@ def test_dex1_command_uses_hand_base_sampling_and_physical_wrist_limits():
     source = _read(DEX1_CONFIG_PATH)
     command_source = _read(COMMAND_PATH)
 
+    assert "class Dex1HandCenterCommandsCfg(velocity_env_cfg.CommandsCfg):" in source
+    assert source.index("posture_command = mdp.UniformLevelPostureCommandCfg(") < source.index(
+        "left_wrist_pose = mdp.SphericalLevelPoseCommandCfg("
+    )
     assert "WRIST_ROLL_LIMIT = math.radians(100.0)" in source
     assert "WRIST_PITCH_YAW_LIMIT = math.radians(80.0)" in source
     assert source.count("l=(0.20, 0.38)") == 2

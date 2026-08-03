@@ -25,7 +25,6 @@ from hbc_lab.tasks.locomotion import mdp
 
 from . import velocity_env_cfg
 from .whole_body_spherical_posture_env_cfg import (
-    SphericalPostureWholeBodyCommandsCfg,
     SphericalPostureWholeBodyEnvCfg,
     SphericalPostureWholeBodyObservationsCfg,
     SphericalPostureWholeBodyRewardsCfg,
@@ -79,8 +78,24 @@ class Dex1HandCenterActionsCfg(velocity_env_cfg.ActionsCfg):
 
 
 @configclass
-class Dex1HandCenterCommandsCfg(SphericalPostureWholeBodyCommandsCfg):
+class Dex1HandCenterCommandsCfg(velocity_env_cfg.CommandsCfg):
     """Sample hand bases spherically, then map physical wrist angles to hand centers."""
+
+    # Wrist commands consume this term during resampling, so it must be declared first.
+    posture_command = mdp.UniformLevelPostureCommandCfg(
+        asset_name="robot",
+        body_name="torso_link",
+        resampling_time_range=(2.0, 4.0),
+        debug_vis=True,
+        ranges=mdp.UniformLevelPostureCommandCfg.Ranges(
+            root_height=(0.70, 0.80),
+            torso_pitch=(0.0, 0.25),
+        ),
+        limit_ranges=mdp.UniformLevelPostureCommandCfg.Ranges(
+            root_height=(0.42, 0.80),
+            torso_pitch=(0.0, 0.85),
+        ),
+    )
 
     left_wrist_pose = mdp.SphericalLevelPoseCommandCfg(
         asset_name="robot",
