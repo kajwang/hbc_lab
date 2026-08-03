@@ -5,6 +5,7 @@ from isaaclab.assets import Articulation
 from isaaclab.utils import math as math_utils
 
 from hbc_lab.assets.robots.unitree import G1_29DOF_BODY_JOINT_NAMES
+from hbc_lab.tasks.locomotion.mdp.pose_transforms import posture_anchor_pose_w
 
 from .high_level_actions import HighLevelCommandState
 from .scenes import HAND_CENTER_FRAME_NAME
@@ -90,21 +91,14 @@ class G1SphericalPostureLowLevelObsBuilder:
         anchor_id = left_anchor_id if side == "left" else right_anchor_id
         assert anchor_id is not None
 
-        anchor_pos_w = robot.data.body_pos_w[:, anchor_id].clone()
-        root_yaw_quat = math_utils.yaw_quat(robot.data.root_quat_w)
-        zeros = torch.zeros(self.env.num_envs, device=self.device)
-        pitch_quat = math_utils.quat_from_euler_xyz(zeros, posture_command[:, 1], zeros)
-        anchor_quat_w = math_utils.quat_mul(root_yaw_quat, pitch_quat)
-
-        root_cmd_pos_w = robot.data.root_pos_w.clone()
-        root_cmd_pos_w[:, 2] = self.env.scene.env_origins[:, 2] + posture_command[:, 0]
-        root_to_anchor_w = anchor_pos_w - robot.data.root_pos_w
-        root_to_anchor_yaw = math_utils.quat_apply_inverse(root_yaw_quat, root_to_anchor_w)
-        anchor_offset_b = torch.zeros_like(root_to_anchor_yaw)
-        anchor_offset_b[:, 1] = root_to_anchor_yaw[:, 1]
-        anchor_offset_b[:, 2] = self.anchor_height_offset
-        anchor_pos_w = root_cmd_pos_w + math_utils.quat_apply(anchor_quat_w, anchor_offset_b)
-        return anchor_pos_w, anchor_quat_w
+        return posture_anchor_pose_w(
+            robot.data.root_pos_w,
+            robot.data.root_quat_w,
+            robot.data.body_pos_w[:, anchor_id],
+            self.env.scene.env_origins,
+            posture_command,
+            self.anchor_height_offset,
+        )
 
     def _target_pose_w(
         self,

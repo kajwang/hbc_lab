@@ -302,6 +302,8 @@ def test_g1_dex1_high_level_wrist_commands_keep_workspace_as_diagnostics_only():
 def test_g1_dex1_hier_low_level_obs_matches_hand_center_low_level_policy_interface():
     obs_source = _read(MDP_ROOT / "low_level_observations.py")
 
+    assert "from hbc_lab.tasks.locomotion.mdp.pose_transforms import posture_anchor_pose_w" in obs_source
+    assert "return posture_anchor_pose_w(" in obs_source
     assert "from .scenes import HAND_CENTER_FRAME_NAME" in obs_source
     assert "self.left_wrist_body_id" not in obs_source
     assert "self.right_wrist_body_id" not in obs_source
