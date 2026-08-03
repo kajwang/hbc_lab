@@ -12,6 +12,9 @@ HIER_OBS_PATH = (
     REPO_ROOT
     / "source/hbc_lab/hbc_lab/tasks/manager_based/skill/g1_dex1_hier_drc/mdp/low_level_observations.py"
 )
+HIER_COMMAND_PATH = (
+    REPO_ROOT / "source/hbc_lab/hbc_lab/tasks/manager_based/skill/g1_dex1_hier_drc/mdp/commands.py"
+)
 
 
 def _read(path: Path) -> str:
@@ -50,9 +53,12 @@ def test_dex1_command_uses_hand_base_sampling_and_physical_wrist_limits():
 
 def test_hier_builder_reuses_shared_posture_anchor_without_changing_command_shape():
     source = _read(HIER_OBS_PATH)
+    command_source = _read(HIER_COMMAND_PATH)
 
     assert "from hbc_lab.tasks.locomotion.mdp.pose_transforms import posture_anchor_pose_w" in source
     assert "return posture_anchor_pose_w(" in source
+    assert "from hbc_lab.tasks.locomotion.mdp.pose_transforms import posture_anchor_pose_w" in command_source
+    assert "return posture_anchor_pose_w(" in command_source
     assert "command_state.left_wrist_pose_b" in source
     assert "command_state.right_wrist_pose_b" in source
     assert "pose_b[:, :3]" in source

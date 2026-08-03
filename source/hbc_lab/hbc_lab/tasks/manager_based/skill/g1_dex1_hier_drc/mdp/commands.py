@@ -13,6 +13,7 @@ from isaaclab.utils import configclass
 from isaaclab.utils import math as math_utils
 from isaaclab.utils.math import yaw_quat
 
+from hbc_lab.tasks.locomotion.mdp.pose_transforms import posture_anchor_pose_w
 from hbc_lab.tasks.manager_based.skill.contact_labels import ContactMode
 from .contact_progress import sample_active_hands
 
@@ -191,21 +192,14 @@ class G1Dex1HierCommand(CommandTerm):
 
     def _anchor_pose_w(self, side: str) -> tuple[torch.Tensor, torch.Tensor]:
         anchor_id = self.left_anchor_body_id if side == "left" else self.right_anchor_body_id
-        anchor_pos_w = self.robot.data.body_pos_w[:, anchor_id].clone()
-        root_yaw_quat = yaw_quat(self.robot.data.root_quat_w)
-        zeros = torch.zeros(self.num_envs, device=self.device)
-        pitch_quat = math_utils.quat_from_euler_xyz(zeros, self.posture_command[:, 1], zeros)
-        anchor_quat_w = math_utils.quat_mul(root_yaw_quat, pitch_quat)
-
-        root_cmd_pos_w = self.robot.data.root_pos_w.clone()
-        root_cmd_pos_w[:, 2] = self.env.scene.env_origins[:, 2] + self.posture_command[:, 0]
-        root_to_anchor_w = anchor_pos_w - self.robot.data.root_pos_w
-        root_to_anchor_yaw = math_utils.quat_apply_inverse(root_yaw_quat, root_to_anchor_w)
-        anchor_offset_b = torch.zeros_like(root_to_anchor_yaw)
-        anchor_offset_b[:, 1] = root_to_anchor_yaw[:, 1]
-        anchor_offset_b[:, 2] = self.anchor_height_offset
-        anchor_pos_w = root_cmd_pos_w + math_utils.quat_apply(anchor_quat_w, anchor_offset_b)
-        return anchor_pos_w, anchor_quat_w
+        return posture_anchor_pose_w(
+            self.robot.data.root_pos_w,
+            self.robot.data.root_quat_w,
+            self.robot.data.body_pos_w[:, anchor_id],
+            self.env.scene.env_origins,
+            self.posture_command,
+            self.anchor_height_offset,
+        )
 
     def _target_pose_w(self, pose_b: torch.Tensor, side: str) -> tuple[torch.Tensor, torch.Tensor]:
         return math_utils.combine_frame_transforms(
