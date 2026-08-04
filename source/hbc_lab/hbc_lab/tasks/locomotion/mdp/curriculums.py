@@ -105,6 +105,44 @@ def _expand_upper_bound(
     return torch.stack((lower, upper)).tolist()
 
 
+def _episode_duration_s(env: ManagerBasedRLEnv, env_ids: Sequence[int]) -> torch.Tensor:
+    """Return each resetting environment's actual elapsed episode time."""
+    episode_steps = torch.clamp(env.episode_length_buf[env_ids].float(), min=1.0)
+    return episode_steps * env.step_dt
+
+
+def _episode_survival_ratio(env: ManagerBasedRLEnv, env_ids: Sequence[int]) -> torch.Tensor:
+    episode_steps = env.episode_length_buf[env_ids].float()
+    return torch.mean(episode_steps / env.max_episode_length)
+
+
+def _mean_episode_command_error(
+    env: ManagerBasedRLEnv,
+    env_ids: Sequence[int],
+    command_names: tuple[str, ...],
+    error_sum_names: tuple[str, ...],
+) -> torch.Tensor:
+    duration_s = _episode_duration_s(env, env_ids)
+    errors = []
+    for command_name in command_names:
+        command_term = env.command_manager.get_term(command_name)
+        for error_sum_name in error_sum_names:
+            error_sum = getattr(command_term, error_sum_name)
+            errors.append(torch.mean(error_sum[env_ids] / duration_s))
+    return torch.mean(torch.stack(errors)) if errors else torch.tensor(float("inf"), device=env.device)
+
+
+def _curriculum_update_ready(
+    env: ManagerBasedRLEnv,
+    env_ids: Sequence[int],
+    min_episode_fraction: float,
+) -> bool:
+    return bool(
+        env.common_step_counter % env.max_episode_length == 0
+        and _episode_survival_ratio(env, env_ids) >= min_episode_fraction
+    )
+
+
 def pose_cmd_levels(
     env: ManagerBasedRLEnv,
     env_ids: Sequence[int],
@@ -202,23 +240,15 @@ def spherical_pose_radius_cmd_levels(
     env: ManagerBasedRLEnv,
     env_ids: Sequence[int],
     command_names: tuple[str, ...] = ("left_wrist_pose", "right_wrist_pose"),
-    penalty_term_names: tuple[str, ...] = ("penalty_left_wrist_pose_error", "penalty_right_wrist_pose_error"),
+    error_sum_name: str = "position_error_sum",
     success_threshold: float = 0.08,
     radius_delta: float = 0.03,
+    min_episode_fraction: float = 0.8,
 ) -> torch.Tensor:
     """Expand spherical wrist-command radius after tracking is reliable."""
-    distances = []
-    for penalty_term_name in penalty_term_names:
-        penalty_term = env.reward_manager.get_term_cfg(penalty_term_name)
-        if penalty_term.weight >= 0.0:
-            continue
-        episode_reward = torch.mean(env.reward_manager._episode_sums[penalty_term_name][env_ids])
-        distance = episode_reward / env.max_episode_length_s / penalty_term.weight
-        distances.append(torch.clamp(distance, min=0.0))
+    tracking_error = _mean_episode_command_error(env, env_ids, command_names, (error_sum_name,))
 
-    tracking_error = torch.mean(torch.stack(distances)) if distances else torch.tensor(float("inf"), device=env.device)
-
-    if env.common_step_counter % env.max_episode_length == 0 and tracking_error < success_threshold:
+    if _curriculum_update_ready(env, env_ids, min_episode_fraction) and tracking_error < success_threshold:
         for command_name in command_names:
             command_term = env.command_manager.get_term(command_name)
             ranges = command_term.cfg.ranges
@@ -244,24 +274,17 @@ def spherical_pose_orientation_cmd_levels(
     env: ManagerBasedRLEnv,
     env_ids: Sequence[int],
     command_names: tuple[str, ...] = ("left_wrist_pose", "right_wrist_pose"),
-    reward_term_names: tuple[str, ...] = ("track_left_wrist_orientation", "track_right_wrist_orientation"),
-    success_threshold: float = 0.65,
+    error_sum_name: str = "orientation_error_sum",
+    success_threshold: float = 0.30,
     roll_delta: float = 0.35,
     ee_pitch_delta: float = 0.04,
     yaw_delta: float = 0.04,
+    min_episode_fraction: float = 0.8,
 ) -> torch.Tensor:
     """Expand spherical pose-command orientation ranges after orientation tracking is reliable."""
-    rewards = []
-    for reward_term_name in reward_term_names:
-        reward_term = env.reward_manager.get_term_cfg(reward_term_name)
-        if reward_term.weight <= 0.0:
-            continue
-        episode_reward = torch.mean(env.reward_manager._episode_sums[reward_term_name][env_ids])
-        rewards.append(episode_reward / env.max_episode_length_s / reward_term.weight)
+    tracking_error = _mean_episode_command_error(env, env_ids, command_names, (error_sum_name,))
 
-    tracking_score = torch.mean(torch.stack(rewards)) if rewards else torch.tensor(0.0, device=env.device)
-
-    if env.common_step_counter % env.max_episode_length == 0 and tracking_score > success_threshold:
+    if _curriculum_update_ready(env, env_ids, min_episode_fraction) and tracking_error < success_threshold:
         for command_name in command_names:
             command_term = env.command_manager.get_term(command_name)
             ranges = command_term.cfg.ranges
@@ -289,28 +312,20 @@ def posture_cmd_levels(
     env: ManagerBasedRLEnv,
     env_ids: Sequence[int],
     command_name: str = "posture_command",
-    penalty_term_names: tuple[str, ...] = ("track_root_height", "track_torso_pitch"),
+    error_sum_names: tuple[str, ...] = ("root_height_error_sum", "torso_pitch_error_sum"),
     success_threshold: float = 0.06,
     root_height_delta: float = 0.03,
     torso_pitch_delta: float = 0.04,
+    min_episode_fraction: float = 0.8,
 ) -> torch.Tensor:
     """Expand root-height and torso-pitch command ranges after posture tracking is reliable."""
-    errors = []
-    for penalty_term_name in penalty_term_names:
-        penalty_term = env.reward_manager.get_term_cfg(penalty_term_name)
-        if penalty_term.weight >= 0.0:
-            continue
-        episode_reward = torch.mean(env.reward_manager._episode_sums[penalty_term_name][env_ids])
-        squared_error = episode_reward / env.max_episode_length_s / penalty_term.weight
-        errors.append(torch.sqrt(torch.clamp(squared_error, min=0.0)))
-
-    tracking_error = torch.mean(torch.stack(errors)) if errors else torch.tensor(float("inf"), device=env.device)
+    tracking_error = _mean_episode_command_error(env, env_ids, (command_name,), error_sum_names)
 
     command_term = env.command_manager.get_term(command_name)
     ranges = command_term.cfg.ranges
     limit_ranges = command_term.cfg.limit_ranges
 
-    if env.common_step_counter % env.max_episode_length == 0 and tracking_error < success_threshold:
+    if _curriculum_update_ready(env, env_ids, min_episode_fraction) and tracking_error < success_threshold:
         ranges.root_height = _expand_lower_bound(
             ranges.root_height, limit_ranges.root_height, root_height_delta, env.device
         )

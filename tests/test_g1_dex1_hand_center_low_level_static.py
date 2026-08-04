@@ -79,7 +79,45 @@ def test_dex1_hand_center_task_tracks_frame_transformer_pose_with_physical_wrist
     assert 'orientation_mode: str = "azimuth"' in command_source
     assert "tracked_frame_sensor_name: str | None = None" in command_source
     assert "target_pos_w[:, self.cfg.tracked_frame_index]" in command_source
-    assert source.count("weight=0.50") == 2
+    assert source.count("weight=1.0") >= 4
+
+
+def test_dex1_hand_center_curricula_use_actual_duration_and_direct_errors():
+    source = _read(G1_ROOT / "whole_body_spherical_posture_dex1_hand_center_env_cfg.py")
+    curriculum_source = _read(MDP_ROOT / "curriculums.py")
+    spherical_command_source = _read(MDP_ROOT / "commands/spherical_pose_command.py")
+    posture_command_source = _read(MDP_ROOT / "commands/posture_command.py")
+
+    assert "def _episode_duration_s(" in curriculum_source
+    assert "env.episode_length_buf[env_ids]" in curriculum_source
+    assert "min_episode_fraction" in curriculum_source
+    assert "position_error_sum" in spherical_command_source
+    assert "orientation_error_sum" in spherical_command_source
+    assert "root_height_error_sum" in posture_command_source
+    assert "torso_pitch_error_sum" in posture_command_source
+    assert '"error_sum_name": "orientation_error_sum"' in source
+    assert '"success_threshold": 0.30' in source
+    assert '"reward_term_names"' not in source.split("orientation_cmd_levels = CurrTerm(", 1)[1].split(
+        "posture_cmd_levels = CurrTerm(", 1
+    )[0]
+
+
+def test_dex1_hand_center_logs_orientation_axes_and_wrist_limit_usage():
+    source = _read(G1_ROOT / "whole_body_spherical_posture_dex1_hand_center_env_cfg.py")
+    command_source = _read(MDP_ROOT / "commands/spherical_pose_command.py")
+
+    for metric_name in (
+        "orientation_roll_error",
+        "orientation_pitch_error",
+        "orientation_yaw_error",
+        "wrist_roll_limit_ratio",
+        "wrist_pitch_limit_ratio",
+        "wrist_yaw_limit_ratio",
+    ):
+        assert f'self.metrics["{metric_name}"]' in command_source
+    assert 'wrist_joint_names=(' in source
+    assert '"left_wrist_roll_joint"' in source
+    assert '"right_wrist_roll_joint"' in source
 
 
 def test_dex1_hand_center_current_pose_observations_use_hand_center_frame():
@@ -121,7 +159,7 @@ def test_dex1_hand_center_task_disables_terrain_level_curriculum_but_keeps_other
     assert "wrist_pose_cmd_levels = CurrTerm" in source
     assert "orientation_cmd_levels = CurrTerm" in source
     assert "func=mdp.spherical_pose_orientation_cmd_levels" in source
-    assert '"reward_term_names": ("track_left_wrist_orientation", "track_right_wrist_orientation")' in source
+    assert '"error_sum_name": "orientation_error_sum"' in source
     assert '"roll_delta": 0.35' in source
     assert '"ee_pitch_delta": 0.04' in source
     assert '"yaw_delta": 0.04' in source

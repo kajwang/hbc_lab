@@ -200,9 +200,10 @@ class SphericalWholeBodyCurriculumCfg(whole_body_env_cfg.WholeBodyCurriculumCfg)
         func=mdp.spherical_pose_radius_cmd_levels,
         params={
             "command_names": ("left_wrist_pose", "right_wrist_pose"),
-            "penalty_term_names": ("penalty_left_wrist_pose_error", "penalty_right_wrist_pose_error"),
+            "error_sum_name": "position_error_sum",
             "success_threshold": 0.08,
             "radius_delta": 0.03,
+            "min_episode_fraction": 0.8,
         },
     )
 

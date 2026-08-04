@@ -113,6 +113,11 @@ class Dex1HandCenterCommandsCfg(velocity_env_cfg.CommandsCfg):
         make_quat_unique=True,
         orientation_mode="wrist_chain",
         wrist_parent_body_name="left_elbow_link",
+        wrist_joint_names=(
+            "left_wrist_roll_joint",
+            "left_wrist_pitch_joint",
+            "left_wrist_yaw_joint",
+        ),
         fixed_palm_quat=(0.70710677, 0.0, 0.0, -0.70710677),
         hand_center_offset=(0.0, 0.09734, 0.0142),
         ranges=mdp.SphericalLevelPoseCommandCfg.Ranges(
@@ -149,6 +154,11 @@ class Dex1HandCenterCommandsCfg(velocity_env_cfg.CommandsCfg):
         make_quat_unique=True,
         orientation_mode="wrist_chain",
         wrist_parent_body_name="right_elbow_link",
+        wrist_joint_names=(
+            "right_wrist_roll_joint",
+            "right_wrist_pitch_joint",
+            "right_wrist_yaw_joint",
+        ),
         fixed_palm_quat=(0.7073882, 0.0, 0.0, -0.7068252),
         hand_center_offset=(0.0, 0.09734, 0.0142),
         ranges=mdp.SphericalLevelPoseCommandCfg.Ranges(
@@ -355,7 +365,7 @@ class Dex1HandCenterRewardsCfg(SphericalPostureWholeBodyRewardsCfg):
     )
     track_left_wrist_orientation = RewTerm(
         func=mdp.frame_pose_command_orientation_error_w_tanh,
-        weight=0.50,
+        weight=1.0,
         params={
             "command_name": "left_wrist_pose",
             "std": 0.75,
@@ -365,7 +375,7 @@ class Dex1HandCenterRewardsCfg(SphericalPostureWholeBodyRewardsCfg):
     )
     track_right_wrist_orientation = RewTerm(
         func=mdp.frame_pose_command_orientation_error_w_tanh,
-        weight=0.50,
+        weight=1.0,
         params={
             "command_name": "right_wrist_pose",
             "std": 0.75,
@@ -403,30 +413,33 @@ class Dex1HandCenterCurriculumCfg(velocity_env_cfg.CurriculumCfg):
         func=mdp.spherical_pose_radius_cmd_levels,
         params={
             "command_names": ("left_wrist_pose", "right_wrist_pose"),
-            "penalty_term_names": ("penalty_left_wrist_pose_error", "penalty_right_wrist_pose_error"),
+            "error_sum_name": "position_error_sum",
             "success_threshold": 0.08,
             "radius_delta": 0.03,
+            "min_episode_fraction": 0.8,
         },
     )
     orientation_cmd_levels = CurrTerm(
         func=mdp.spherical_pose_orientation_cmd_levels,
         params={
             "command_names": ("left_wrist_pose", "right_wrist_pose"),
-            "reward_term_names": ("track_left_wrist_orientation", "track_right_wrist_orientation"),
-            "success_threshold": 0.65,
+            "error_sum_name": "orientation_error_sum",
+            "success_threshold": 0.30,
             "roll_delta": 0.35,
             "ee_pitch_delta": 0.04,
             "yaw_delta": 0.04,
+            "min_episode_fraction": 0.8,
         },
     )
     posture_cmd_levels = CurrTerm(
         func=mdp.posture_cmd_levels,
         params={
             "command_name": "posture_command",
-            "penalty_term_names": ("track_root_height", "track_torso_pitch"),
+            "error_sum_names": ("root_height_error_sum", "torso_pitch_error_sum"),
             "success_threshold": 0.05,
             "root_height_delta": 0.03,
             "torso_pitch_delta": 0.05,
+            "min_episode_fraction": 0.8,
         },
     )
 

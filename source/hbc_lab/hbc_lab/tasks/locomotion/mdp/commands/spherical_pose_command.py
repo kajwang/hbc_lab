@@ -13,10 +13,12 @@ from isaaclab.utils import configclass
 from isaaclab.utils.math import (
     combine_frame_transforms,
     compute_pose_error,
+    euler_xyz_from_quat,
     quat_from_euler_xyz,
     quat_inv,
     quat_mul,
     quat_unique,
+    wrap_to_pi,
     yaw_quat,
 )
 
@@ -51,6 +53,7 @@ class SphericalPoseCommand(CommandTerm):
         self.fixed_palm_quat = None
         self.hand_center_offset = None
         self.wrist_parent_body_idx = None
+        self.wrist_joint_ids = None
         if cfg.orientation_mode == "wrist_chain":
             if cfg.wrist_parent_body_name is None or cfg.fixed_palm_quat is None or cfg.hand_center_offset is None:
                 raise ValueError(
@@ -67,9 +70,26 @@ class SphericalPoseCommand(CommandTerm):
                 device=self.device,
                 dtype=self.pose_command_b.dtype,
             )
+            if cfg.wrist_joint_names is not None:
+                wrist_joint_ids, resolved_joint_names = self.robot.find_joints(
+                    list(cfg.wrist_joint_names), preserve_order=True
+                )
+                if len(wrist_joint_ids) != 3:
+                    raise ValueError(
+                        f"Expected roll, pitch, and yaw wrist joints, got {resolved_joint_names}"
+                    )
+                self.wrist_joint_ids = wrist_joint_ids
 
         self.metrics["position_error"] = torch.zeros(self.num_envs, device=self.device)
         self.metrics["orientation_error"] = torch.zeros(self.num_envs, device=self.device)
+        self.metrics["orientation_roll_error"] = torch.zeros(self.num_envs, device=self.device)
+        self.metrics["orientation_pitch_error"] = torch.zeros(self.num_envs, device=self.device)
+        self.metrics["orientation_yaw_error"] = torch.zeros(self.num_envs, device=self.device)
+        self.metrics["wrist_roll_limit_ratio"] = torch.zeros(self.num_envs, device=self.device)
+        self.metrics["wrist_pitch_limit_ratio"] = torch.zeros(self.num_envs, device=self.device)
+        self.metrics["wrist_yaw_limit_ratio"] = torch.zeros(self.num_envs, device=self.device)
+        self.position_error_sum = torch.zeros(self.num_envs, device=self.device)
+        self.orientation_error_sum = torch.zeros(self.num_envs, device=self.device)
 
     def __str__(self) -> str:
         msg = "SphericalPoseCommand:\n"
@@ -81,6 +101,14 @@ class SphericalPoseCommand(CommandTerm):
     def command(self) -> torch.Tensor:
         """Desired pose in the shoulder-yaw frame: [x, y, z, qw, qx, qy, qz]."""
         return self.pose_command_b
+
+    def reset(self, env_ids: Sequence[int] | None = None) -> dict[str, float]:
+        if env_ids is None:
+            env_ids = slice(None)
+        extras = super().reset(env_ids)
+        self.position_error_sum[env_ids] = 0.0
+        self.orientation_error_sum[env_ids] = 0.0
+        return extras
 
     def _spherical_to_anchor_xyz(self, env_ids: Sequence[int]):
         radius = self.spherical_command[env_ids, 0]
@@ -144,8 +172,28 @@ class SphericalPoseCommand(CommandTerm):
             current_pos_w,
             current_quat_w,
         )
-        self.metrics["position_error"] = torch.norm(pos_error, dim=-1)
-        self.metrics["orientation_error"] = torch.norm(rot_error, dim=-1)
+        position_error = torch.norm(pos_error, dim=-1)
+        orientation_error = torch.norm(rot_error, dim=-1)
+        self.metrics["position_error"] = position_error
+        self.metrics["orientation_error"] = orientation_error
+        self.position_error_sum += position_error * self.env.step_dt
+        self.orientation_error_sum += orientation_error * self.env.step_dt
+
+        error_quat = quat_mul(quat_inv(self.pose_command_w[:, 3:]), current_quat_w)
+        roll_error, pitch_error, yaw_error = euler_xyz_from_quat(error_quat)
+        self.metrics["orientation_roll_error"] = torch.abs(wrap_to_pi(roll_error))
+        self.metrics["orientation_pitch_error"] = torch.abs(wrap_to_pi(pitch_error))
+        self.metrics["orientation_yaw_error"] = torch.abs(wrap_to_pi(yaw_error))
+
+        if self.wrist_joint_ids is not None:
+            wrist_joint_pos = self.robot.data.joint_pos[:, self.wrist_joint_ids]
+            wrist_joint_limits = self.robot.data.soft_joint_pos_limits[:, self.wrist_joint_ids]
+            limit_center = 0.5 * (wrist_joint_limits[..., 0] + wrist_joint_limits[..., 1])
+            limit_half_width = 0.5 * (wrist_joint_limits[..., 1] - wrist_joint_limits[..., 0])
+            limit_ratio = torch.abs(wrist_joint_pos - limit_center) / torch.clamp(limit_half_width, min=1.0e-6)
+            self.metrics["wrist_roll_limit_ratio"] = limit_ratio[:, 0]
+            self.metrics["wrist_pitch_limit_ratio"] = limit_ratio[:, 1]
+            self.metrics["wrist_yaw_limit_ratio"] = limit_ratio[:, 2]
 
     def _current_pose_w(self) -> tuple[torch.Tensor, torch.Tensor]:
         if self.tracked_frame is not None:
@@ -245,6 +293,7 @@ class SphericalLevelPoseCommandCfg(CommandTermCfg):
     orientation_mode: str = "azimuth"
     orientation_yaw_offset: float = 0.0
     wrist_parent_body_name: str | None = None
+    wrist_joint_names: tuple[str, str, str] | None = None
     fixed_palm_quat: tuple[float, float, float, float] | None = None
     hand_center_offset: tuple[float, float, float] | None = None
     fixed_anchor_height: float | None = None

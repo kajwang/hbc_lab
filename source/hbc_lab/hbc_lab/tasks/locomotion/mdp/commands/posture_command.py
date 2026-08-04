@@ -33,11 +33,21 @@ class UniformPostureCommand(CommandTerm):
         self.metrics["torso_pitch_command"] = torch.zeros(self.num_envs, device=self.device)
         self.metrics["root_height_error"] = torch.zeros(self.num_envs, device=self.device)
         self.metrics["torso_pitch_error"] = torch.zeros(self.num_envs, device=self.device)
+        self.root_height_error_sum = torch.zeros(self.num_envs, device=self.device)
+        self.torso_pitch_error_sum = torch.zeros(self.num_envs, device=self.device)
 
     @property
     def command(self) -> torch.Tensor:
         """Posture command [root_height, torso_pitch]."""
         return self.posture_command
+
+    def reset(self, env_ids: Sequence[int] | None = None) -> dict[str, float]:
+        if env_ids is None:
+            env_ids = slice(None)
+        extras = super().reset(env_ids)
+        self.root_height_error_sum[env_ids] = 0.0
+        self.torso_pitch_error_sum[env_ids] = 0.0
+        return extras
 
     def _current_posture(self) -> torch.Tensor:
         root_height = self.asset.data.root_pos_w[:, 2] - self.env.scene.env_origins[:, 2]
@@ -50,6 +60,8 @@ class UniformPostureCommand(CommandTerm):
         self.metrics["torso_pitch_command"] = self.posture_command[:, 1]
         self.metrics["root_height_error"] = torch.abs(error[:, 0])
         self.metrics["torso_pitch_error"] = torch.abs(error[:, 1])
+        self.root_height_error_sum += self.metrics["root_height_error"] * self.env.step_dt
+        self.torso_pitch_error_sum += self.metrics["torso_pitch_error"] * self.env.step_dt
 
     def _resample_command(self, env_ids: Sequence[int]):
         r = torch.empty(len(env_ids), device=self.device)
