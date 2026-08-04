@@ -243,7 +243,7 @@ def spherical_pose_radius_cmd_levels(
     error_sum_name: str = "position_error_sum",
     success_threshold: float = 0.08,
     radius_delta: float = 0.03,
-    min_episode_fraction: float = 0.8,
+    min_episode_fraction: float = 0.5,
 ) -> torch.Tensor:
     """Expand spherical wrist-command radius after tracking is reliable."""
     tracking_error = _mean_episode_command_error(env, env_ids, command_names, (error_sum_name,))
@@ -279,7 +279,7 @@ def spherical_pose_orientation_cmd_levels(
     roll_delta: float = 0.35,
     ee_pitch_delta: float = 0.04,
     yaw_delta: float = 0.04,
-    min_episode_fraction: float = 0.8,
+    min_episode_fraction: float = 0.5,
 ) -> torch.Tensor:
     """Expand spherical pose-command orientation ranges after orientation tracking is reliable."""
     tracking_error = _mean_episode_command_error(env, env_ids, command_names, (error_sum_name,))
@@ -316,7 +316,7 @@ def posture_cmd_levels(
     success_threshold: float = 0.06,
     root_height_delta: float = 0.03,
     torso_pitch_delta: float = 0.04,
-    min_episode_fraction: float = 0.8,
+    min_episode_fraction: float = 0.5,
 ) -> torch.Tensor:
     """Expand root-height and torso-pitch command ranges after posture tracking is reliable."""
     tracking_error = _mean_episode_command_error(env, env_ids, (command_name,), error_sum_names)

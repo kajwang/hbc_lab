@@ -203,7 +203,7 @@ class SphericalWholeBodyCurriculumCfg(whole_body_env_cfg.WholeBodyCurriculumCfg)
             "error_sum_name": "position_error_sum",
             "success_threshold": 0.08,
             "radius_delta": 0.03,
-            "min_episode_fraction": 0.8,
+            "min_episode_fraction": 0.5,
         },
     )
 

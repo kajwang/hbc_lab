@@ -416,7 +416,7 @@ class Dex1HandCenterCurriculumCfg(velocity_env_cfg.CurriculumCfg):
             "error_sum_name": "position_error_sum",
             "success_threshold": 0.08,
             "radius_delta": 0.03,
-            "min_episode_fraction": 0.8,
+            "min_episode_fraction": 0.5,
         },
     )
     orientation_cmd_levels = CurrTerm(
@@ -428,7 +428,7 @@ class Dex1HandCenterCurriculumCfg(velocity_env_cfg.CurriculumCfg):
             "roll_delta": 0.35,
             "ee_pitch_delta": 0.04,
             "yaw_delta": 0.04,
-            "min_episode_fraction": 0.8,
+            "min_episode_fraction": 0.5,
         },
     )
     posture_cmd_levels = CurrTerm(
@@ -439,7 +439,7 @@ class Dex1HandCenterCurriculumCfg(velocity_env_cfg.CurriculumCfg):
             "success_threshold": 0.05,
             "root_height_delta": 0.03,
             "torso_pitch_delta": 0.05,
-            "min_episode_fraction": 0.8,
+            "min_episode_fraction": 0.5,
         },
     )
 

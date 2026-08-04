@@ -111,7 +111,7 @@ class SphericalPostureWholeBodyCurriculumCfg(whole_body_spherical_env_cfg.Spheri
             "success_threshold": 0.05,
             "root_height_delta": 0.03,
             "torso_pitch_delta": 0.05,
-            "min_episode_fraction": 0.8,
+            "min_episode_fraction": 0.5,
         },
     )
 

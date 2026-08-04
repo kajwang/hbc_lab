@@ -97,6 +97,7 @@ def test_dex1_hand_center_curricula_use_actual_duration_and_direct_errors():
     assert "torso_pitch_error_sum" in posture_command_source
     assert '"error_sum_name": "orientation_error_sum"' in source
     assert '"success_threshold": 0.30' in source
+    assert source.count('"min_episode_fraction": 0.5') == 3
     assert '"reward_term_names"' not in source.split("orientation_cmd_levels = CurrTerm(", 1)[1].split(
         "posture_cmd_levels = CurrTerm(", 1
     )[0]
