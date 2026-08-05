@@ -14,6 +14,7 @@ from isaaclab.utils.math import (
     combine_frame_transforms,
     compute_pose_error,
     euler_xyz_from_quat,
+    quat_apply,
     quat_from_euler_xyz,
     quat_inv,
     quat_mul,
@@ -27,6 +28,7 @@ from ..pose_transforms import (
     hand_base_to_hand_center_pose,
     posture_anchor_pose_w,
 )
+from ..stick_figure_kinematics import stick_figure_hand_center_pose
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedEnv
@@ -54,12 +56,20 @@ class SphericalPoseCommand(CommandTerm):
         self.hand_center_offset = None
         self.wrist_parent_body_idx = None
         self.wrist_joint_ids = None
+        self.anchor_offset_b = None
+        self.upper_arm_roll_command = torch.zeros(self.num_envs, device=self.device)
+        self.elbow_flexion_command = torch.zeros(self.num_envs, device=self.device)
         if cfg.orientation_mode == "wrist_chain":
-            if cfg.wrist_parent_body_name is None or cfg.fixed_palm_quat is None or cfg.hand_center_offset is None:
+            if cfg.fixed_palm_quat is None or cfg.hand_center_offset is None:
                 raise ValueError(
-                    "wrist_chain commands require wrist_parent_body_name, fixed_palm_quat, and hand_center_offset"
+                    "wrist_chain commands require fixed_palm_quat and hand_center_offset"
                 )
-            self.wrist_parent_body_idx = self.robot.find_bodies(cfg.wrist_parent_body_name)[0][0]
+            if cfg.sampling_mode != "stick_figure":
+                if cfg.wrist_parent_body_name is None:
+                    raise ValueError("spherical wrist_chain commands require wrist_parent_body_name")
+                self.wrist_parent_body_idx = self.robot.find_bodies(cfg.wrist_parent_body_name)[0][0]
+            elif cfg.upper_arm_length is None or cfg.forearm_length is None:
+                raise ValueError("stick_figure commands require upper_arm_length and forearm_length")
             self.fixed_palm_quat = torch.tensor(
                 cfg.fixed_palm_quat,
                 device=self.device,
@@ -88,6 +98,8 @@ class SphericalPoseCommand(CommandTerm):
         self.metrics["wrist_roll_limit_ratio"] = torch.zeros(self.num_envs, device=self.device)
         self.metrics["wrist_pitch_limit_ratio"] = torch.zeros(self.num_envs, device=self.device)
         self.metrics["wrist_yaw_limit_ratio"] = torch.zeros(self.num_envs, device=self.device)
+        self.metrics["upper_arm_roll_command"] = torch.zeros(self.num_envs, device=self.device)
+        self.metrics["elbow_flexion_command"] = torch.zeros(self.num_envs, device=self.device)
         self.position_error_sum = torch.zeros(self.num_envs, device=self.device)
         self.orientation_error_sum = torch.zeros(self.num_envs, device=self.device)
 
@@ -135,6 +147,19 @@ class SphericalPoseCommand(CommandTerm):
                 (anchor_height_command[:, self.cfg.anchor_height_command_index], anchor_pitch),
                 dim=-1,
             )
+            if self.cfg.use_full_anchor_offset:
+                if self.anchor_offset_b is None:
+                    self.anchor_offset_b = quat_apply(
+                        quat_inv(root_yaw_quat),
+                        anchor_pos_w - self.robot.data.root_pos_w,
+                    ).detach()
+                zeros = torch.zeros(self.num_envs, device=self.device)
+                pitch_quat = quat_from_euler_xyz(zeros, anchor_pitch, zeros)
+                anchor_quat_w = quat_mul(root_yaw_quat, pitch_quat)
+                root_cmd_pos_w = self.robot.data.root_pos_w.clone()
+                root_cmd_pos_w[:, 2] = self.env.scene.env_origins[:, 2] + posture_command[:, 0]
+                anchor_pos_w = root_cmd_pos_w + quat_apply(anchor_quat_w, self.anchor_offset_b)
+                return anchor_pos_w, anchor_quat_w
             return posture_anchor_pose_w(
                 self.robot.data.root_pos_w,
                 self.robot.data.root_quat_w,
@@ -194,6 +219,8 @@ class SphericalPoseCommand(CommandTerm):
             self.metrics["wrist_roll_limit_ratio"] = limit_ratio[:, 0]
             self.metrics["wrist_pitch_limit_ratio"] = limit_ratio[:, 1]
             self.metrics["wrist_yaw_limit_ratio"] = limit_ratio[:, 2]
+        self.metrics["upper_arm_roll_command"] = torch.abs(self.upper_arm_roll_command)
+        self.metrics["elbow_flexion_command"] = self.elbow_flexion_command
 
     def _current_pose_w(self) -> tuple[torch.Tensor, torch.Tensor]:
         if self.tracked_frame is not None:
@@ -205,6 +232,34 @@ class SphericalPoseCommand(CommandTerm):
 
     def _resample_command(self, env_ids: Sequence[int]):
         r = torch.empty(len(env_ids), device=self.device)
+        if self.cfg.sampling_mode == "stick_figure":
+            self.spherical_command[env_ids, 1] = r.uniform_(*self.cfg.ranges.pitch)
+            self.spherical_command[env_ids, 2] = r.uniform_(*self.cfg.ranges.azimuth)
+            self.upper_arm_roll_command[env_ids] = r.uniform_(*self.cfg.ranges.upper_arm_roll)
+            self.elbow_flexion_command[env_ids] = r.uniform_(*self.cfg.ranges.elbow_flexion)
+
+            wrist_angles = torch.zeros((len(env_ids), 3), device=self.device)
+            wrist_angles[:, 0] = r.uniform_(*self.cfg.ranges.roll)
+            wrist_angles[:, 1] = r.uniform_(*self.cfg.ranges.ee_pitch)
+            wrist_angles[:, 2] = r.uniform_(*self.cfg.ranges.yaw)
+            hand_center_pos, hand_center_quat = stick_figure_hand_center_pose(
+                upper_pitch=self.spherical_command[env_ids, 1],
+                upper_azimuth=self.spherical_command[env_ids, 2],
+                upper_roll=self.upper_arm_roll_command[env_ids],
+                elbow_flexion=self.elbow_flexion_command[env_ids],
+                wrist_angles=wrist_angles,
+                upper_arm_length=self.cfg.upper_arm_length,
+                forearm_length=self.cfg.forearm_length,
+                fixed_palm_quat=self.fixed_palm_quat,
+                hand_center_offset=self.hand_center_offset,
+            )
+            self.pose_command_b[env_ids, :3] = hand_center_pos
+            self.pose_command_b[env_ids, 3:] = (
+                quat_unique(hand_center_quat) if self.cfg.make_quat_unique else hand_center_quat
+            )
+            self._update_pose_command_w()
+            return
+
         self.spherical_command[env_ids, 0] = r.uniform_(*self.cfg.ranges.l)
         self.spherical_command[env_ids, 1] = r.uniform_(*self.cfg.ranges.pitch)
         self.spherical_command[env_ids, 2] = r.uniform_(*self.cfg.ranges.azimuth)
@@ -290,12 +345,16 @@ class SphericalLevelPoseCommandCfg(CommandTermCfg):
     anchor_pitch_command_index: int = 1
     anchor_pitch_scale: float = 1.0
     anchor_pitch_offset: float = 0.0
+    use_full_anchor_offset: bool = False
+    sampling_mode: str = "spherical"
     orientation_mode: str = "azimuth"
     orientation_yaw_offset: float = 0.0
     wrist_parent_body_name: str | None = None
     wrist_joint_names: tuple[str, str, str] | None = None
     fixed_palm_quat: tuple[float, float, float, float] | None = None
     hand_center_offset: tuple[float, float, float] | None = None
+    upper_arm_length: float | None = None
+    forearm_length: float | None = None
     fixed_anchor_height: float | None = None
     make_quat_unique: bool = False
 
@@ -307,6 +366,8 @@ class SphericalLevelPoseCommandCfg(CommandTermCfg):
         roll: tuple[float, float] = MISSING
         ee_pitch: tuple[float, float] = MISSING
         yaw: tuple[float, float] = MISSING
+        upper_arm_roll: tuple[float, float] = (0.0, 0.0)
+        elbow_flexion: tuple[float, float] = (0.0, 0.0)
 
     ranges: Ranges = MISSING
     limit_ranges: Ranges = MISSING

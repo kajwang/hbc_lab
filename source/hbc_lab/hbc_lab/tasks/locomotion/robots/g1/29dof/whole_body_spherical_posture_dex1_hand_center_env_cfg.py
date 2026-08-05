@@ -39,6 +39,8 @@ HAND_CENTER_FRAME_MARKER_CFG = FRAME_MARKER_CFG.replace(
 HAND_CENTER_FRAME_MARKER_CFG.markers["frame"].scale = (0.07, 0.07, 0.07)
 WRIST_ROLL_LIMIT = math.radians(100.0)
 WRIST_PITCH_YAW_LIMIT = math.radians(80.0)
+UPPER_ARM_LENGTH = 0.1845
+FOREARM_LENGTH = 0.2258
 
 
 @configclass
@@ -79,7 +81,7 @@ class Dex1HandCenterActionsCfg(velocity_env_cfg.ActionsCfg):
 
 @configclass
 class Dex1HandCenterCommandsCfg(velocity_env_cfg.CommandsCfg):
-    """Sample hand bases spherically, then map physical wrist angles to hand centers."""
+    """Generate coupled hand-center poses from a lightweight seven-DoF arm model."""
 
     # Wrist commands consume this term during resampling, so it must be declared first.
     posture_command = mdp.UniformLevelPostureCommandCfg(
@@ -100,19 +102,21 @@ class Dex1HandCenterCommandsCfg(velocity_env_cfg.CommandsCfg):
     left_wrist_pose = mdp.SphericalLevelPoseCommandCfg(
         asset_name="robot",
         body_name="left_hand_base_link",
-        anchor_body_name="left_shoulder_pitch_link",
+        anchor_body_name="left_shoulder_roll_link",
         tracked_frame_sensor_name=HAND_CENTER_FRAME_NAME,
         tracked_frame_index=0,
         anchor_height_command_name="posture_command",
         anchor_height_command_index=0,
-        anchor_height_offset=0.43,
         anchor_pitch_command_name="posture_command",
         anchor_pitch_command_index=1,
+        use_full_anchor_offset=True,
         resampling_time_range=(2.0, 4.0),
         debug_vis=True,
         make_quat_unique=True,
+        sampling_mode="stick_figure",
         orientation_mode="wrist_chain",
-        wrist_parent_body_name="left_elbow_link",
+        upper_arm_length=UPPER_ARM_LENGTH,
+        forearm_length=FOREARM_LENGTH,
         wrist_joint_names=(
             "left_wrist_roll_joint",
             "left_wrist_pitch_joint",
@@ -121,39 +125,45 @@ class Dex1HandCenterCommandsCfg(velocity_env_cfg.CommandsCfg):
         fixed_palm_quat=(0.70710677, 0.0, 0.0, -0.70710677),
         hand_center_offset=(0.0, 0.09734, 0.0142),
         ranges=mdp.SphericalLevelPoseCommandCfg.Ranges(
-            l=(0.20, 0.38),
+            l=(0.0, 0.0),
             pitch=(-0.5 * math.pi, 0.0),
             azimuth=(0.0, 0.5 * math.pi),
             roll=(-0.50, 0.50),
             ee_pitch=(-0.12, 0.12),
             yaw=(-0.12, 0.12),
+            upper_arm_roll=(-0.5 * math.pi, 0.5 * math.pi),
+            elbow_flexion=(0.45, 1.05),
         ),
         limit_ranges=mdp.SphericalLevelPoseCommandCfg.Ranges(
-            l=(0.12, 0.58),
+            l=(0.0, 0.0),
             pitch=(-0.5 * math.pi, 0.0),
             azimuth=(0.0, 0.5 * math.pi),
             roll=(-WRIST_ROLL_LIMIT, WRIST_ROLL_LIMIT),
             ee_pitch=(-WRIST_PITCH_YAW_LIMIT, WRIST_PITCH_YAW_LIMIT),
             yaw=(-WRIST_PITCH_YAW_LIMIT, WRIST_PITCH_YAW_LIMIT),
+            upper_arm_roll=(-0.5 * math.pi, 0.5 * math.pi),
+            elbow_flexion=(0.15, 1.85),
         ),
     )
 
     right_wrist_pose = mdp.SphericalLevelPoseCommandCfg(
         asset_name="robot",
         body_name="right_hand_base_link",
-        anchor_body_name="right_shoulder_pitch_link",
+        anchor_body_name="right_shoulder_roll_link",
         tracked_frame_sensor_name=HAND_CENTER_FRAME_NAME,
         tracked_frame_index=1,
         anchor_height_command_name="posture_command",
         anchor_height_command_index=0,
-        anchor_height_offset=0.43,
         anchor_pitch_command_name="posture_command",
         anchor_pitch_command_index=1,
+        use_full_anchor_offset=True,
         resampling_time_range=(2.0, 4.0),
         debug_vis=True,
         make_quat_unique=True,
+        sampling_mode="stick_figure",
         orientation_mode="wrist_chain",
-        wrist_parent_body_name="right_elbow_link",
+        upper_arm_length=UPPER_ARM_LENGTH,
+        forearm_length=FOREARM_LENGTH,
         wrist_joint_names=(
             "right_wrist_roll_joint",
             "right_wrist_pitch_joint",
@@ -162,20 +172,24 @@ class Dex1HandCenterCommandsCfg(velocity_env_cfg.CommandsCfg):
         fixed_palm_quat=(0.7073882, 0.0, 0.0, -0.7068252),
         hand_center_offset=(0.0, 0.09734, 0.0142),
         ranges=mdp.SphericalLevelPoseCommandCfg.Ranges(
-            l=(0.20, 0.38),
+            l=(0.0, 0.0),
             pitch=(-0.5 * math.pi, 0.0),
             azimuth=(-0.5 * math.pi, 0.0),
             roll=(-0.50, 0.50),
             ee_pitch=(-0.12, 0.12),
             yaw=(-0.12, 0.12),
+            upper_arm_roll=(-0.5 * math.pi, 0.5 * math.pi),
+            elbow_flexion=(0.45, 1.05),
         ),
         limit_ranges=mdp.SphericalLevelPoseCommandCfg.Ranges(
-            l=(0.12, 0.58),
+            l=(0.0, 0.0),
             pitch=(-0.5 * math.pi, 0.0),
             azimuth=(-0.5 * math.pi, 0.0),
             roll=(-WRIST_ROLL_LIMIT, WRIST_ROLL_LIMIT),
             ee_pitch=(-WRIST_PITCH_YAW_LIMIT, WRIST_PITCH_YAW_LIMIT),
             yaw=(-WRIST_PITCH_YAW_LIMIT, WRIST_PITCH_YAW_LIMIT),
+            upper_arm_roll=(-0.5 * math.pi, 0.5 * math.pi),
+            elbow_flexion=(0.15, 1.85),
         ),
     )
 
@@ -409,13 +423,13 @@ class Dex1HandCenterCurriculumCfg(velocity_env_cfg.CurriculumCfg):
 
     terrain_levels = None
     lin_vel_cmd_levels = CurrTerm(mdp.lin_vel_cmd_levels)
-    wrist_pose_cmd_levels = CurrTerm(
-        func=mdp.spherical_pose_radius_cmd_levels,
+    elbow_cmd_levels = CurrTerm(
+        func=mdp.stick_figure_elbow_cmd_levels,
         params={
             "command_names": ("left_wrist_pose", "right_wrist_pose"),
             "error_sum_name": "position_error_sum",
             "success_threshold": 0.08,
-            "radius_delta": 0.03,
+            "elbow_delta": 0.10,
             "min_episode_fraction": 0.5,
         },
     )
@@ -542,7 +556,7 @@ class SphericalPostureDex1HandCenterPlayEnvCfg(SphericalPostureDex1HandCenterEnv
         self.commands.posture_command.ranges = self.commands.posture_command.limit_ranges
         self.curriculum.terrain_levels = None
         self.curriculum.lin_vel_cmd_levels = None
-        self.curriculum.wrist_pose_cmd_levels = None
+        self.curriculum.elbow_cmd_levels = None
         self.curriculum.orientation_cmd_levels = None
         self.curriculum.posture_cmd_levels = None
         self.commands.left_wrist_pose.debug_vis = True

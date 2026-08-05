@@ -270,6 +270,46 @@ def spherical_pose_radius_cmd_levels(
     return torch.mean(torch.stack(progress)) if progress else torch.tensor(0.0, device=env.device)
 
 
+def stick_figure_elbow_cmd_levels(
+    env: ManagerBasedRLEnv,
+    env_ids: Sequence[int],
+    command_names: tuple[str, ...] = ("left_wrist_pose", "right_wrist_pose"),
+    error_sum_name: str = "position_error_sum",
+    success_threshold: float = 0.08,
+    elbow_delta: float = 0.10,
+    min_episode_fraction: float = 0.5,
+) -> torch.Tensor:
+    """Expand stick-figure elbow flexion after hand-center position tracking is reliable."""
+    tracking_error = _mean_episode_command_error(env, env_ids, command_names, (error_sum_name,))
+
+    if _curriculum_update_ready(env, env_ids, min_episode_fraction) and tracking_error < success_threshold:
+        for command_name in command_names:
+            command_term = env.command_manager.get_term(command_name)
+            ranges = command_term.cfg.ranges
+            limit_ranges = command_term.cfg.limit_ranges
+            ranges.elbow_flexion = _expand_uniform_range(
+                ranges.elbow_flexion,
+                limit_ranges.elbow_flexion,
+                elbow_delta,
+                env.device,
+            )
+
+    progress = []
+    for command_name in command_names:
+        command_term = env.command_manager.get_term(command_name)
+        ranges = command_term.cfg.ranges
+        limit_ranges = command_term.cfg.limit_ranges
+        current_width = torch.tensor(
+            ranges.elbow_flexion[1] - ranges.elbow_flexion[0], device=env.device
+        )
+        limit_width = torch.tensor(
+            limit_ranges.elbow_flexion[1] - limit_ranges.elbow_flexion[0], device=env.device
+        )
+        progress.append(current_width / torch.clamp(limit_width, min=1.0e-6))
+
+    return torch.mean(torch.stack(progress)) if progress else torch.tensor(0.0, device=env.device)
+
+
 def spherical_pose_orientation_cmd_levels(
     env: ManagerBasedRLEnv,
     env_ids: Sequence[int],

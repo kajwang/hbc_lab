@@ -140,9 +140,10 @@ def test_dex1_hand_center_orientation_target_uses_physical_wrist_chain_sampling(
     command_source = _read(MDP_ROOT / "commands/spherical_pose_command.py")
 
     assert source.count('orientation_mode="wrist_chain"') == 2
+    assert source.count('sampling_mode="stick_figure"') == 2
     assert 'if self.cfg.orientation_mode == "wrist_chain":' in command_source
     assert "compose_wrist_chain_quat(euler_angles, self.fixed_palm_quat)" in command_source
-    assert "hand_base_to_hand_center_pose(" in command_source
+    assert "stick_figure_hand_center_pose(" in command_source
     assert source.count("fixed_palm_quat=") == 2
     assert source.count("hand_center_offset=(0.0, 0.09734, 0.0142)") == 2
 
@@ -157,7 +158,9 @@ def test_dex1_hand_center_task_disables_terrain_level_curriculum_but_keeps_other
     assert "terrain_levels = None" in source
     assert "self.curriculum.terrain_levels = None" in source
     assert "self.curriculum.lin_vel_cmd_levels = None" not in train_source
-    assert "wrist_pose_cmd_levels = CurrTerm" in source
+    assert "wrist_pose_cmd_levels = CurrTerm" not in source
+    assert "elbow_cmd_levels = CurrTerm" in source
+    assert "func=mdp.stick_figure_elbow_cmd_levels" in source
     assert "orientation_cmd_levels = CurrTerm" in source
     assert "func=mdp.spherical_pose_orientation_cmd_levels" in source
     assert '"error_sum_name": "orientation_error_sum"' in source
@@ -166,10 +169,11 @@ def test_dex1_hand_center_task_disables_terrain_level_curriculum_but_keeps_other
     assert '"yaw_delta": 0.04' in source
     assert "posture_cmd_levels = CurrTerm" in source
     assert "self.curriculum.lin_vel_cmd_levels = None" in source
-    assert "self.curriculum.wrist_pose_cmd_levels = None" in source
+    assert "self.curriculum.elbow_cmd_levels = None" in source
     assert "self.curriculum.orientation_cmd_levels = None" in source
     assert "self.curriculum.posture_cmd_levels = None" in source
     assert "def spherical_pose_orientation_cmd_levels" in curriculum_source
+    assert "def stick_figure_elbow_cmd_levels" in curriculum_source
     assert "ranges.roll = _expand_uniform_range" in curriculum_source
     assert "ranges.ee_pitch = _expand_uniform_range" in curriculum_source
     assert "ranges.yaw = _expand_uniform_range" in curriculum_source

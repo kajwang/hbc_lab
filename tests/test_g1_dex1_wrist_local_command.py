@@ -31,7 +31,7 @@ def test_shared_pose_transform_module_defines_posture_anchor_and_wrist_chain():
     assert "hand_base_pos + quat_apply(hand_base_quat, hand_center_offset)" in source
 
 
-def test_dex1_command_uses_hand_base_sampling_and_physical_wrist_limits():
+def test_dex1_command_uses_stick_figure_sampling_and_physical_wrist_limits():
     source = _read(DEX1_CONFIG_PATH)
     command_source = _read(COMMAND_PATH)
 
@@ -41,18 +41,28 @@ def test_dex1_command_uses_hand_base_sampling_and_physical_wrist_limits():
     )
     assert "WRIST_ROLL_LIMIT = math.radians(100.0)" in source
     assert "WRIST_PITCH_YAW_LIMIT = math.radians(80.0)" in source
-    assert source.count("l=(0.20, 0.38)") == 2
-    assert source.count("l=(0.12, 0.58)") == 2
+    assert source.count('sampling_mode="stick_figure"') == 2
+    assert source.count('anchor_body_name="left_shoulder_roll_link"') == 1
+    assert source.count('anchor_body_name="right_shoulder_roll_link"') == 1
+    assert source.count("use_full_anchor_offset=True") == 2
+    assert source.count("upper_arm_length=UPPER_ARM_LENGTH") == 2
+    assert source.count("forearm_length=FOREARM_LENGTH") == 2
+    assert source.count("upper_arm_roll=(-0.5 * math.pi, 0.5 * math.pi)") == 4
+    assert source.count("elbow_flexion=(0.45, 1.05)") == 2
+    assert source.count("elbow_flexion=(0.15, 1.85)") == 2
     assert source.count('orientation_mode="wrist_chain"') == 2
     assert source.count('anchor_height_command_name="posture_command"') == 2
     assert source.count('anchor_pitch_command_name="posture_command"') == 2
-    assert source.count("anchor_height_offset=0.43") == 2
+    assert "anchor_height_offset=0.43" not in source
     assert source.count("hand_center_offset=(0.0, 0.09734, 0.0142)") == 2
-    assert 'wrist_parent_body_name="left_elbow_link"' in source
-    assert 'wrist_parent_body_name="right_elbow_link"' in source
     assert "compose_wrist_chain_quat" in command_source
-    assert "quat_mul(wrist_parent_quat_b, wrist_chain_quat)" in command_source
-    assert "hand_base_to_hand_center_pose" in command_source
+    assert "stick_figure_hand_center_pose" in command_source
+    assert "self.anchor_offset_b" in command_source
+    stick_figure_branch = command_source.split('if self.cfg.sampling_mode == "stick_figure":', 1)[1].split(
+        "self.spherical_command[env_ids, 0]", 1
+    )[0]
+    assert "self.robot.data.body_quat_w[env_ids, self.wrist_parent_body_idx]" not in stick_figure_branch
+    assert "return" in stick_figure_branch
 
 
 def test_hier_builder_reuses_shared_posture_anchor_without_changing_command_shape():
