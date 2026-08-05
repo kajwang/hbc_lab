@@ -549,8 +549,3 @@ class SphericalPostureDex1HandCenterPlayEnvCfg(SphericalPostureDex1HandCenterEnv
         self.commands.right_wrist_pose.debug_vis = True
         if self.scene.terrain.terrain_generator is not None:
             self.scene.terrain.terrain_generator.curriculum = False
-
-        for cmd in (self.commands.left_wrist_pose, self.commands.right_wrist_pose):
-            cmd.ranges.roll = (-0.85, 0.85)
-            cmd.ranges.ee_pitch = (-0.16, 0.16)
-            cmd.ranges.yaw = (-0.16, 0.16)

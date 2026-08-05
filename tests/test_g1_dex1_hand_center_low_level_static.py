@@ -174,3 +174,16 @@ def test_dex1_hand_center_task_disables_terrain_level_curriculum_but_keeps_other
     assert "ranges.ee_pitch = _expand_uniform_range" in curriculum_source
     assert "ranges.yaw = _expand_uniform_range" in curriculum_source
     assert 'for range_name in ("roll", "ee_pitch", "yaw")' in curriculum_source
+
+
+def test_dex1_hand_center_play_uses_full_command_limits_without_orientation_override():
+    source = _read(G1_ROOT / "whole_body_spherical_posture_dex1_hand_center_env_cfg.py")
+    play_source = source.split("class SphericalPostureDex1HandCenterPlayEnvCfg", 1)[1]
+
+    assert "self.commands.base_velocity.ranges = self.commands.base_velocity.limit_ranges" in play_source
+    assert "self.commands.left_wrist_pose.ranges = self.commands.left_wrist_pose.limit_ranges" in play_source
+    assert "self.commands.right_wrist_pose.ranges = self.commands.right_wrist_pose.limit_ranges" in play_source
+    assert "self.commands.posture_command.ranges = self.commands.posture_command.limit_ranges" in play_source
+    assert "cmd.ranges.roll" not in play_source
+    assert "cmd.ranges.ee_pitch" not in play_source
+    assert "cmd.ranges.yaw" not in play_source
