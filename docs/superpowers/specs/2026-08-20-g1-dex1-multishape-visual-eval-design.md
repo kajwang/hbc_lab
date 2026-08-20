@@ -39,7 +39,7 @@ Print this mapping once at startup. In-world text labels are intentionally omitt
 - Keep object orientation randomization enabled. This is necessary to test whether BPS helps select a grasp orientation rather than memorize an asset-specific pose.
 - Use the same seed for both launch entries so their resets are directly comparable.
 - Use 11 environments and 6 m environment spacing for a readable local overview without scene overlap.
-- Keep command, hand-center, and object-frame debug visualization enabled.
+- Keep command, hand-center, policy target-region, and goal debug visualization enabled. Continue hiding the raw USD-root frame because several assets do not place it at the geometry center.
 - Use the existing local low-level HBC checkpoint for both policies.
 
 ## Checkpoint Contract
@@ -47,8 +47,8 @@ Print this mapping once at startup. In-world text labels are intentionally omitt
 Copy matched-iteration BPS and no-BPS checkpoints from the two remote training runs into stable local paths:
 
 ```text
-logs/5090/g1_dex1/multishape/bps/model_10500.pt
-logs/5090/g1_dex1/multishape/no_bps/model_10500.pt
+logs/5090/g1_dex1/multishape/bps/model_11300.pt
+logs/5090/g1_dex1/multishape/no_bps/model_11300.pt
 ```
 
 The launch entries must reference these stable paths rather than timestamped remote run directories. The BPS checkpoint must be loaded only with BPS observations enabled; the no-BPS checkpoint must be loaded only with BPS observations disabled.
