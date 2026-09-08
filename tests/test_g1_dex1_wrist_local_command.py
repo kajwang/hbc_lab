@@ -69,11 +69,13 @@ def test_hier_builder_reuses_shared_posture_anchor_without_changing_command_shap
     source = _read(HIER_OBS_PATH)
     command_source = _read(HIER_COMMAND_PATH)
 
-    assert "from hbc_lab.tasks.locomotion.mdp.pose_transforms import posture_anchor_pose_w" in source
-    assert "return posture_anchor_pose_w(" in source
-    assert "from hbc_lab.tasks.locomotion.mdp.pose_transforms import posture_anchor_pose_w" in command_source
-    assert "return posture_anchor_pose_w(" in command_source
-    assert "command_state.left_wrist_pose_b" in source
-    assert "command_state.right_wrist_pose_b" in source
-    assert "pose_b[:, :3]" in source
-    assert "pose_b[:, 3:]" in source
+    assert "from hbc_lab.tasks.locomotion.mdp.pose_transforms import full_posture_anchor_pose_w" in source
+    assert "return full_posture_anchor_pose_w(" in source
+    assert "from hbc_lab.tasks.locomotion.mdp.pose_transforms import full_posture_anchor_pose_w" in command_source
+    assert "return full_posture_anchor_pose_w(" in command_source
+    assert "command_state.left_hand_center_pose_a" in source
+    assert "command_state.right_hand_center_pose_a" in source
+    assert "left_wrist_pose_b" not in source
+    assert "right_wrist_pose_b" not in source
+    assert "pose_a[:, :3]" in source
+    assert "pose_a[:, 3:]" in source

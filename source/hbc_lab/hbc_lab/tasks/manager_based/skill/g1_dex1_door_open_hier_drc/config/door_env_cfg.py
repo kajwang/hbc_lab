@@ -23,13 +23,26 @@ class G1Dex1DoorOpenEnvCfg(G1Dex1HierDrcEnvCfg):
     rewards: G1Dex1DoorOpenRewardsCfg = G1Dex1DoorOpenRewardsCfg()
 
     object_mass_curriculum_enabled: bool = False
-    door_latch_handle_threshold: float = 0.5
+    door_latch_handle_threshold: float = math.radians(82.0)
     door_latch_hinge_release_threshold: float = 0.2
     door_latch_stiffness: float = 5000.0
     door_latch_damping: float = 10.0
     door_hinge_target: float = math.radians(60.0)
+    motion_unlock_angle: float = math.pi / 2.0
+    motion_unlock_axis_local: tuple[float, float, float] = (-1.0, 0.0, 0.0)
+    motion_position_scale: float = 0.25
+    motion_rotation_scale: float = 0.5
+    motion_position_tolerance: float = 0.06
+    motion_rotation_tolerance: float = 0.15
+    motion_keyframe_stable_steps: int = 5
     success_couple_threshold: float = 0.45
     success_steps: int = 25
+
+    def apply_debug_visualization(self) -> None:
+        super().apply_debug_visualization()
+        enabled = self.enable_debug_visualization
+        self.motion_keyframe_debug_vis = enabled
+        self.scene.object_frame.debug_vis = False
 
     def __post_init__(self):
         super().__post_init__()

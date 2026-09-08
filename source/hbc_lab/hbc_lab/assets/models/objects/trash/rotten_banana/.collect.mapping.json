@@ -1,0 +1,29 @@
+{
+    "version": "1.0",
+    "file_records": [
+        {
+            "source_url": "/tmp/6c10126e415d6a2a/textures/Image.png",
+            "source_hash": "cde9ed9e4a411fb6031219c7d886f39784704de1",
+            "target_url": "./tmp/6c10126e415d6a2a/textures/Image.png",
+            "target_hash": "a88e379183f7b943a1567def8060c3b022b947d6"
+        },
+        {
+            "source_url": "/tmp/6c10126e415d6a2a/textures/Organic_Waste_OrganicWaste_AlbedoTransparency.png",
+            "source_hash": "08eb39f015c5935a0871598c6537ea17ca5ea5fd",
+            "target_url": "./tmp/6c10126e415d6a2a/textures/Organic_Waste_OrganicWaste_AlbedoTransparency.png",
+            "target_hash": "51fb6f7512aedb3a0d163b437c657de3011e53d7"
+        },
+        {
+            "source_url": "/tmp/6c10126e415d6a2a/textures/Organic_Waste_OrganicWaste_Normal.png",
+            "source_hash": "e0bc806389fb99f7ccee27a8b654e57e700e5b1a",
+            "target_url": "./tmp/6c10126e415d6a2a/textures/Organic_Waste_OrganicWaste_Normal.png",
+            "target_hash": "be14332c9029ae2934f9dbca8080848eed5b025c"
+        },
+        {
+            "source_url": "/tmp/6c10126e415d6a2a/textures/Organic_Waste_OrganicWaste_Roughness.png",
+            "source_hash": "de76f575022bfc43b489d101c47fc6ec805689e2",
+            "target_url": "./tmp/6c10126e415d6a2a/textures/Organic_Waste_OrganicWaste_Roughness.png",
+            "target_hash": "57062a95da01835fda48e3eeadf5c6438c334cf3"
+        }
+    ]
+}

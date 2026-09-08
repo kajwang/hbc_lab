@@ -56,7 +56,7 @@ def test_g1_dex1_gripper_uses_limit_endpoints_for_open_and_close_direction():
     assert '".*_hand_Joint[12]_1": -0.02' in unitree_source
     assert "DEX1_OPEN_POSITION = -0.02" in gripper_source
     assert "DEX1_CLOSE_POSITION = 0.024" in gripper_source
-    assert "enabled_self_collisions=False" in unitree_source
+    assert "enabled_self_collisions=True" in unitree_source
     assert "stiffness=800.0" in unitree_source
     assert "friction=0.0" in unitree_source
 
@@ -95,7 +95,7 @@ def test_g1_dex1_object_visualization_only_shows_policy_position_inputs():
 
     assert "OBJECT_INITIAL_MARKER_CFG" not in env_source
     assert "object_initial_pose_visualizer" not in env_source
-    assert "FRAME_MARKER_CFG" not in env_source
+    assert "MOTION_FRAME_MARKER_CFG" in env_source
     assert "LEFT_CONTACT_TARGET_MARKER_CFG" in env_source
     assert "RIGHT_CONTACT_TARGET_MARKER_CFG" in env_source
     assert "self.target_pose_visualizer.visualize(self.object_target_pos_w)" in env_source
@@ -159,11 +159,9 @@ def test_g1_dex1_hier_env_reuses_current_low_level_policy_interface():
     assert "self.low_level_obs_builder.build(" in env_source
     assert "Dex1GripperController" in env_source
     assert "self.gripper_controller.apply(self.command_state.left_grip, self.command_state.right_grip)" in env_source
-    assert "HL/left_gripper_target_mean" in env_source
-    assert "HL/right_gripper_joint_pos_mean" in env_source
-    assert "HL/right_gripper_target_buffer_mean" in env_source
+    assert "HL/active_grip_mean" in env_source
+    assert "HL/active_hand_center_tracking_error" in env_source
     assert "HL/action_saturation_ratio" in env_source
-    assert "HL/action_abs_mean" in env_source
 
 
 def test_g1_dex1_uses_trainable_checkpoint_policy_std():
@@ -223,15 +221,19 @@ def test_g1_dex1_couple_reward_uses_grasp_window_and_inner_pad_contact():
     assert "def compute_gripper_contact_components" in progress_source
     assert "contact = torch.minimum(left_contact, right_contact)" in progress_source
     assert "pinch = contact * pinch_score" in progress_source
-    assert "grasp = contact * grip * close_allowed_gate" in progress_source
+    assert "grasp = contact * grip * close_position_gate * close_orientation_gate" in progress_source
+    assert "def symmetric_parallel_gripper_orientation_error" in progress_source
+    assert "def orientation_close_gate" in progress_source
     assert "def active_inner_pad_contact" in reward_source
     assert "INNER_PAD_CONTACT_GATE_SCALE = 0.05" in reward_source
     assert "left_link1_3 = env._step_link_contact[\"left_Link1_3\"]" in reward_source
     assert "left_link2_3 = env._step_link_contact[\"left_Link2_3\"]" in reward_source
     assert "grasp_window = 1.0 - torch.tanh(env.d_active_hand / 0.1)" in reward_source
     assert "pad_gate = torch.clamp(inner_pad_contact / INNER_PAD_CONTACT_GATE_SCALE, min=0.0, max=1.0)" in reward_source
-    assert "gated_gripper_close1 = gripper_close * pad_gate" in reward_source
-    assert "gated_gripper_close2 = gripper_close * grasp_window" in reward_source
+    assert "pad_gated_gripper_close = gripper_close * pad_gate" in reward_source
+    assert "close_ready_gate = torch.maximum(grasp_window, pad_gate)" in reward_source
+    assert "env.active_orientation_gate" not in reward_source
+    assert "gated_gripper_close = gripper_close * close_ready_gate" in reward_source
     assert "0.4 * near" in reward_source
     assert "+ 0.1 * pad_gate" in reward_source
     assert "+ 0.1 * env.c_pinch" in reward_source
@@ -239,11 +241,11 @@ def test_g1_dex1_couple_reward_uses_grasp_window_and_inner_pad_contact():
     assert "def root_object_facing_reward" in reward_source
     assert "DRC/root_object_facing_mean" in reward_source
     assert "root_object_facing = RewTerm(func=root_object_facing_reward, weight=2.0)" in reward_source
-    assert "Couple/grasp_window_mean" in env_source
-    assert "Couple/pad_gate_mean" in env_source
     assert "ApproachOnly/" not in env_source
-    assert "# self.c_couple = update_ema(self.c_couple, progress.pinch, alpha=0.2)" in env_source
-    assert "self.c_couple = update_ema(self.c_couple, progress.grasp, alpha=0.2)" in env_source
+    assert "physical_grasp = progress.contact * progress.grip" in env_source
+    assert "self.c_grasp = update_ema(self.c_grasp, physical_grasp, alpha=0.2)" in env_source
+    assert "self.c_couple = update_ema(self.c_couple, physical_grasp, alpha=0.2)" in env_source
+    assert 'self.extras["log"]["GraspPose/pose_aligned_grasp_mean"]' in env_source
     assert "left_gripper_finger_contact" in scenes_source
     assert "right_gripper_finger_contact" in scenes_source
     assert "left_hand_base_link" in scenes_source
@@ -256,7 +258,7 @@ def test_g1_dex1_couple_reward_uses_grasp_window_and_inner_pad_contact():
     assert ".*hand.*" in reward_source
 
 
-def test_g1_dex1_records_all_gripper_link_contact_diagnostics():
+def test_g1_dex1_accumulates_only_reward_required_gripper_link_contacts():
     scenes_source = _read(MDP_ROOT / "scenes.py")
     env_source = _read(CONFIG_ROOT / "g1_dex1_env.py")
 
@@ -269,8 +271,9 @@ def test_g1_dex1_records_all_gripper_link_contact_diagnostics():
     assert "right_hand_Link1_3" in scenes_source
     assert "right_hand_Link2_2" in scenes_source
     assert "right_hand_Link2_3" in scenes_source
-    assert "ContactLink/{key}_mean" in env_source
-    assert "ContactLink/active_{link_name}_force" in env_source
+    assert "self._step_link_contact" in env_source
+    assert "self._step_link_force" not in env_source
+    assert "ContactLink/" not in env_source
 
 
 def test_g1_dex1_logs_success_before_successful_envs_are_reset():
@@ -281,29 +284,56 @@ def test_g1_dex1_logs_success_before_successful_envs_are_reset():
     assert 'self.extras["log"]["Task/success_count"] = step_success_count' in step_source
 
 
-def test_g1_dex1_logs_active_link_contact_with_pre_reset_active_hand():
+def test_g1_dex1_logs_active_hand_ratio_with_pre_reset_active_hand():
     env_source = _read(CONFIG_ROOT / "g1_dex1_env.py")
     step_source = env_source.split("    def step(", maxsplit=1)[1]
 
     assert "step_active_hand = self.active_hand.clone()" in step_source
     assert '(step_active_hand == 0).float().mean()' in step_source
-    assert "self._log_link_contact_diagnostics(step_active_hand)" in step_source
 
 
 def test_g1_dex1_high_level_wrist_commands_keep_workspace_as_diagnostics_only():
     action_source = _read(MDP_ROOT / "high_level_actions.py")
 
-    assert "workspace_min" in action_source
-    assert "workspace_max" in action_source
+    assert "wrist_radius_range: tuple[float, float] = (0.20, 0.58)" in action_source
+    assert "workspace_min" not in action_source
+    assert "workspace_max" not in action_source
     assert "_clamp_position_to_workspace" not in action_source
     assert "torch.maximum(torch.minimum(position, upper), lower)" not in action_source
+
+
+def test_g1_dex1_high_level_commands_are_named_by_tracked_hand_center():
+    action_source = _read(MDP_ROOT / "high_level_actions.py")
+    command_source = _read(MDP_ROOT / "commands.py")
+
+    assert "left_hand_center_pose_a" in action_source
+    assert "right_hand_center_pose_a" in action_source
+    assert "default_left_hand_center_pose_a" in command_source
+    assert "default_right_hand_center_pose_a" in command_source
+    assert "left_wrist_pose_b" not in action_source
+    assert "right_wrist_pose_b" not in action_source
+    assert "left_wrist_visualizer_cfg" not in command_source
+    assert "right_wrist_visualizer_cfg" not in command_source
+
+
+def test_g1_dex1_actor_observes_deployable_execution_state_and_command_derivatives():
+    env_source = _read(CONFIG_ROOT / "g1_dex1_env.py")
+    observation_source = _read(MDP_ROOT / "observations.py")
+
+    assert "self.command_rate" in env_source
+    assert "self.previous_command_rate" in env_source
+    assert "self.command_acceleration" in env_source
+    assert "self.previous_command_acceleration" in env_source
+    assert "self.command_jerk" in env_source
+    assert "def execution_state_obs" in observation_source
+    assert "execution = ObsTerm(func=execution_state_obs" in observation_source
 
 
 def test_g1_dex1_hier_low_level_obs_matches_hand_center_low_level_policy_interface():
     obs_source = _read(MDP_ROOT / "low_level_observations.py")
 
-    assert "from hbc_lab.tasks.locomotion.mdp.pose_transforms import posture_anchor_pose_w" in obs_source
-    assert "return posture_anchor_pose_w(" in obs_source
+    assert "from hbc_lab.tasks.locomotion.mdp.pose_transforms import full_posture_anchor_pose_w" in obs_source
+    assert "return full_posture_anchor_pose_w(" in obs_source
     assert "from .scenes import HAND_CENTER_FRAME_NAME" in obs_source
     assert "self.left_wrist_body_id" not in obs_source
     assert "self.right_wrist_body_id" not in obs_source
@@ -353,10 +383,14 @@ def test_g1_dex1_hier_tracking_penalty_and_diagnostics_use_hand_center_not_wrist
     reward_source = _read(MDP_ROOT / "rewards.py")
     env_source = _read(CONFIG_ROOT / "g1_dex1_env.py")
 
-    assert "def both_hand_center_tracking_error_penalty" in reward_source
+    assert "def contact_conditioned_motion_reward" in reward_source
+    assert '"hand_position_tracking": 0.20' in reward_source
+    assert '"hand_orientation_tracking": 0.10' in reward_source
+    assert "both_hand_center_tracking_error_penalty" not in reward_source
     assert "both_wrist_tracking_error_penalty" not in reward_source
     assert "HAND_CENTER_FRAME_NAME" in reward_source
-    assert "hand_center_pos_w = env.scene[HAND_CENTER_FRAME_NAME].data.target_pos_w" in reward_source
+    assert "frame_sensor = env.scene[HAND_CENTER_FRAME_NAME]" in reward_source
+    assert "current_pos_w = frame_sensor.data.target_pos_w[:, frame_index]" in reward_source
     assert "left_wrist_body_id" not in reward_source
     assert "right_wrist_body_id" not in reward_source
     assert "left_wrist_body_id" not in env_source

@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "name": "hbc_lab_frozen_baselines_v1",
+  "created_at": "2026-08-29",
+  "repository": {
+    "head_commit": "0e63dffb97a0333210e0eea5370eeaed65e895bb",
+    "snapshot_note": "The working tree contains the research implementation beyond HEAD. Source digests below, not HEAD alone, define this frozen snapshot.",
+    "isaaclab_commit": "ad4ce34e1519ede8629d15c759b5b9d24656c3ec",
+    "robot_lab_commit": "695baab38b0b2711a2162439551376feeb8cc7cc",
+    "legacy_interaction_commit": "9dfe6493949820927ca08a0b4868c63900ab1a3a",
+    "source_trees": {
+      "low_level_task": {
+        "path": "source/hbc_lab/hbc_lab/tasks/locomotion/robots/g1/29dof",
+        "sha256": "9db3d273fd5e307f93bfec5a23341ad219fae7f402a94a1c0eb06bfd617b8fcd"
+      },
+      "locomotion_mdp": {
+        "path": "source/hbc_lab/hbc_lab/tasks/locomotion/mdp",
+        "sha256": "e8c3a50b45a04177e42733558bd093de7b92ee90cab74f4f7494e4014a301bab"
+      },
+      "pnp": {
+        "path": "source/hbc_lab/hbc_lab/tasks/manager_based/skill/g1_dex1_hier_drc",
+        "sha256": "2ff0eb457865d6cf3d8d9cfb5c9c7d1cb01f8b7dbad1b46090bb64824e4fe36d"
+      },
+      "legacy_hier_base": {
+        "path": ".worktrees/door-model-3500-play/source/hbc_lab/hbc_lab/tasks/manager_based/skill/g1_dex1_hier_drc",
+        "sha256": "ad23f2bcbbd2d1d57184a8dc1fd48c58832b9c003a341750bcf967a38749cd12"
+      },
+      "box_carry": {
+        "path": ".worktrees/door-model-3500-play/source/hbc_lab/hbc_lab/tasks/manager_based/skill/g1_dex1_box_carry_hier_drc",
+        "sha256": "a60234daf1f2d7910f4c6f1918a06194cadccb3d5d2206b18616a1cab2b8e570"
+      },
+      "cart_push": {
+        "path": ".worktrees/door-model-3500-play/source/hbc_lab/hbc_lab/tasks/manager_based/skill/g1_dex1_cart_push_hier_drc",
+        "sha256": "a5fdc035f6e5d12867088bb57a519ff5b39e4198459074b56365f60daa746010"
+      },
+      "door_open": {
+        "path": ".worktrees/door-model-3500-play/source/hbc_lab/hbc_lab/tasks/manager_based/skill/g1_dex1_door_open_hier_drc",
+        "sha256": "bf70eb40cd5deda8eeb74be5c71cf1be3829281bf32daf082573c2c4f2e32db2"
+      },
+      "drawer": {
+        "path": ".worktrees/door-model-3500-play/source/hbc_lab/hbc_lab/tasks/manager_based/skill/g1_dex1_drawer_hier_drc",
+        "sha256": "06b23f6741dccb2d2501477a9100f8ad6e0a3fecf96e85b76664c15fe2259ff7"
+      }
+    },
+    "source_files": {
+      "robot_asset": {
+        "path": "source/hbc_lab/hbc_lab/assets/robots/unitree.py",
+        "sha256": "dea75866d5f58af490121a18cbda953705c5a48becb6e7f29170b0fa64b1db36"
+      },
+      "contact_label": {
+        "path": "source/hbc_lab/hbc_lab/tasks/manager_based/skill/contact_labels.py",
+        "sha256": "f213795728135e21a447959e836f6686118a11c14486972300749855926e3d99"
+      },
+      "sparse_pose_motion": {
+        "path": "source/hbc_lab/hbc_lab/tasks/manager_based/skill/pose_motion.py",
+        "sha256": "7a3c5da808fb3092a57c58e5eeab7e1b42b2be6238873712b6de6af0b48fd0e2"
+      },
+      "contact_sensor_filters": {
+        "path": "source/hbc_lab/hbc_lab/tasks/manager_based/skill/contact_sensor_filters.py",
+        "sha256": "35db095881ba9c740f3937407a0161d47ef1a07a5d6342bfcf2b137703c3ccae"
+      },
+      "object_asset_config": {
+        "path": "source/hbc_lab/hbc_lab/assets/objects.py",
+        "sha256": "80f9a8106955bb65a960165d31d9949652da8ee687d34237cb3201e74fd2128a"
+      },
+      "articulated_asset_config": {
+        "path": "source/hbc_lab/hbc_lab/assets/articulated_objects.py",
+        "sha256": "a10ec90fb0a57575a22237d4377e729c67c21443a1c71a1f606d2c2254956a59"
+      },
+      "play_script": {
+        "path": "scripts/rsl_rl/play.py",
+        "sha256": "518978135c9e02e86c5be64762b4c4895fdf9b576ca03e4553876345d598c76e"
+      },
+      "benchmark_metrics": {
+        "path": "scripts/evaluation/benchmark_metrics.py",
+        "sha256": "b0a8a4e44b54589f8800cff76c06736c9660e8295c8580859f9787555263166a"
+      },
+      "benchmark_runner": {
+        "path": "scripts/evaluation/run_frozen_benchmark.py",
+        "sha256": "44735d39296f1ab0a4c2c7672eaa1d4984d373f0b6c4f3889ad881a09645ac43"
+      }
+    }
+  },
+  "shared": {
+    "low_level_policy": {
+      "path": "logs/exported_policies/g1_dex1_handcenter_stickfigure_m49999.pt",
+      "sha256": "4725c32ea188027119e11b2fa9d03b64ddf12c4526a303fe9a204c88f9c0c804"
+    }
+  },
+  "evaluation": {
+    "num_envs": 256,
+    "steps": 2000,
+    "warmup_steps": 0,
+    "seed": 42
+  },
+  "baselines": {
+    "pnp": {
+      "task_id": "HBC-Isaac-G1-Dex1-HierDrc-Play-v0",
+      "capability_status": "validated",
+      "actor_observation_dim": 1360,
+      "checkpoint": {
+        "path": "logs/5090/g1_dex1/motion/model_5700.pt",
+        "sha256": "c3ba5274e9fbf2e5853e0a28d5b6af9e998119722ad3691ef7aa7bc4a7f6b0fc"
+      },
+      "overrides": []
+    },
+    "box_carry": {
+      "task_id": "HBC-Isaac-G1-Dex1-BoxCarry-HierDrc-Play-v0",
+      "source_root": ".worktrees/door-model-3500-play/source/hbc_lab",
+      "capability_status": "validated",
+      "actor_observation_dim": 670,
+      "checkpoint": {
+        "path": "logs/rsl_rl/g1_dex1_box_carry_hier_drc/2026-07-28_17-02-14/model_10000.pt",
+        "sha256": "e9a34d23ce71bc0d9cb7b22b27453d24fb3d057575bad06c0ee5fc18c8ce18d0"
+      },
+      "overrides": [
+        "env.low_level_action_clip=null"
+      ]
+    },
+    "cart_push": {
+      "task_id": "HBC-Isaac-G1-Dex1-CartPush-HierDrc-Play-v0",
+      "source_root": ".worktrees/door-model-3500-play/source/hbc_lab",
+      "capability_status": "validated",
+      "actor_observation_dim": 670,
+      "checkpoint": {
+        "path": "logs/5090/g1_dex1/cart/model_4700.pt",
+        "sha256": "5b2a128e67a1e1683fb6c227b03f8bcf00b281a8c7e8b2692d0ede96ab5ee68d"
+      },
+      "overrides": []
+    },
+    "door_open": {
+      "task_id": "HBC-Isaac-G1-Dex1-DoorOpen-HierDrc-Play-v0",
+      "source_root": ".worktrees/door-model-3500-play/source/hbc_lab",
+      "capability_status": "partial",
+      "actor_observation_dim": 820,
+      "checkpoint": {
+        "path": "logs/5090/g1_dex1/door/model_3500.pt",
+        "sha256": "632845c3c1bfc791c350723fffd6aee8cad89a4281d5773d113e599ed21eb757"
+      },
+      "overrides": []
+    },
+    "drawer": {
+      "task_id": "HBC-Isaac-G1-Dex1-Drawer-HierDrc-Play-v0",
+      "source_root": ".worktrees/door-model-3500-play/source/hbc_lab",
+      "capability_status": "partial",
+      "actor_observation_dim": 820,
+      "checkpoint": {
+        "path": "logs/5090/g1_dex1/drawer/model_5400.pt",
+        "sha256": "dc2e70c8cddef4db11ff39e8dd9f58d8a4e884da7a1439ca6b55c48e4fa704a0"
+      },
+      "overrides": []
+    }
+  }
+}

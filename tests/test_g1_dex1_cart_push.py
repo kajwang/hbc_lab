@@ -20,6 +20,14 @@ def _source(relative_path: str) -> str:
     return path.read_text()
 
 
+def test_cart_push_uses_shared_contact_conditioned_motion_quality():
+    source = _source("mdp/rewards.py")
+
+    assert "contact_conditioned_motion_reward" in source
+    assert source.count("motion_quality = RewTerm(") == 1
+    assert '"manip_scale": 200.0' in source
+
+
 def test_cart_scene_uses_articulated_cart_and_inner_pad_contacts():
     source = _source("mdp/scenes.py")
     assert "CART_CFG" in source
@@ -56,7 +64,7 @@ def test_cart_is_bimanual_grasp_without_mass_curriculum():
     assert "ContactMode.GRASP" in source
     assert "object_mass_curriculum_enabled: bool = False" in source
     assert 'self.scene["object"].data.default_mass.sum(dim=-1)' in env_source
-    assert "cart_handle_target_half_width: float = 0.12" in source
+    assert "cart_handle_target_half_width: float = 0.1" in source
     assert "cart_goal_displacement_x: tuple[float, float] = (2.0, 4.0)" in source
     assert "cart_goal_displacement_y: tuple[float, float] = (-0.5, 0.5)" in source
 

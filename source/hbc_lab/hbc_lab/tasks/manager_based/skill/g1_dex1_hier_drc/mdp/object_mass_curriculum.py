@@ -3,6 +3,12 @@ from __future__ import annotations
 import torch
 
 
+def _sanitize_progress(progress: torch.Tensor) -> torch.Tensor:
+    dtype = progress.dtype if progress.is_floating_point() else torch.float32
+    progress = progress.to(dtype=dtype)
+    return torch.nan_to_num(progress, nan=0.0, posinf=1.0, neginf=0.0).clamp(0.0, 1.0)
+
+
 def balanced_active_hand_progress(
     w_manip: torch.Tensor,
     active_hand: torch.Tensor,
@@ -16,6 +22,7 @@ def balanced_active_hand_progress(
     if w_manip.numel() == 0:
         raise ValueError("Cannot compute curriculum progress from an empty batch")
 
+    w_manip = _sanitize_progress(w_manip)
     active_hand = active_hand.to(device=w_manip.device)
     left_mask = active_hand == 0
     right_mask = active_hand == 1
@@ -37,6 +44,27 @@ def balanced_active_hand_progress(
     return left_mean, right_mean, balanced
 
 
+def update_monotonic_curriculum_level(
+    previous_level: torch.Tensor,
+    previous_ema: torch.Tensor,
+    current: torch.Tensor,
+    *,
+    alpha: float,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Update a monotonic curriculum scalar without propagating non-finite state."""
+    if not 0.0 <= alpha <= 1.0:
+        raise ValueError(f"EMA alpha must be in [0, 1], got {alpha}")
+
+    current = _sanitize_progress(current)
+    previous_ema = torch.as_tensor(previous_ema, device=current.device, dtype=current.dtype)
+    previous_level = torch.as_tensor(previous_level, device=current.device, dtype=current.dtype)
+    previous_ema = torch.where(torch.isfinite(previous_ema), previous_ema, current).clamp(0.0, 1.0)
+    previous_level = torch.where(torch.isfinite(previous_level), previous_level, previous_ema).clamp(0.0, 1.0)
+    next_ema = (1.0 - alpha) * previous_ema + alpha * current
+    next_level = torch.maximum(previous_level, next_ema)
+    return next_ema, next_level
+
+
 def object_mass_curriculum_parameters(
     w_manip: torch.Tensor,
     *,
@@ -52,7 +80,7 @@ def object_mass_curriculum_parameters(
     """Return log-space mass center and noise scale for the global W_manip curriculum."""
     dtype = w_manip.dtype if w_manip.is_floating_point() else torch.float32
     device = w_manip.device
-    w_manip = torch.clamp(w_manip.to(dtype=dtype), min=0.0)
+    w_manip = _sanitize_progress(w_manip.to(dtype=dtype))
 
     log_start = torch.log(torch.as_tensor(start_mass, device=device, dtype=dtype))
     log_ref = torch.log(torch.as_tensor(ref_mass, device=device, dtype=dtype))
@@ -93,4 +121,10 @@ def sample_object_masses(
     log_center = torch.log(center)
     noise = torch.randn(num_envs, device=device, dtype=dtype, generator=generator)
     mass = torch.exp(log_center + noise * log_std)
+    mass = torch.nan_to_num(
+        mass,
+        nan=float(kwargs.get("start_mass", 10.0)),
+        posinf=max_mass,
+        neginf=min_mass,
+    )
     return torch.clamp(mass, min_mass, max_mass)

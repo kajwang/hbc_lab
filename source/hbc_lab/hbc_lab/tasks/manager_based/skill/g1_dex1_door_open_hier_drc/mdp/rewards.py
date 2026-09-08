@@ -8,20 +8,22 @@ from isaaclab.utils import configclass
 from hbc_lab.tasks.locomotion import mdp
 from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.mdp.rewards import (
     approach_reward,
-    both_hand_center_tracking_error_penalty,
-    command_smoothness,
+    contact_conditioned_motion_reward,
     couple_reward,
     root_object_facing_reward,
     task_success_reward,
 )
+from hbc_lab.tasks.manager_based.skill.pose_motion import generic_pose_manip_reward
 
-from .progress import compute_spatial_progress
+
+def motion_manip_reward(env) -> torch.Tensor:
+    reward = generic_pose_manip_reward(env.motion_progress)
+    env.extras["log"]["Motion/progress_reward_mean"] = reward.mean()
+    return reward
 
 
-def door_manip_reward(env) -> torch.Tensor:
-    initial_distance = torch.norm(env.object_initial_pos_w - env.object_target_pos_w, dim=-1)
-    progress = compute_spatial_progress(initial_distance, env.d_goal)
-    return 0.7 * progress + 0.3 * env.c_couple
+def approach_root_object_facing_reward(env) -> torch.Tensor:
+    return env.W_app * root_object_facing_reward(env)
 
 
 def hier_drc_reward(
@@ -32,7 +34,7 @@ def hier_drc_reward(
 ) -> torch.Tensor:
     r_app = approach_reward(env)
     r_couple = couple_reward(env)
-    r_manip = door_manip_reward(env)
+    r_manip = motion_manip_reward(env)
     env.extras["log"]["DRC/R_app_raw"] = r_app.mean()
     env.extras["log"]["DRC/R_couple_raw"] = r_couple.mean()
     env.extras["log"]["DRC/R_manip_raw"] = r_manip.mean()
@@ -43,21 +45,21 @@ def hier_drc_reward(
     )
 
 
-def inactive_left_contact_penalty(env) -> torch.Tensor:
-    return env.inactive_left_contact
+def inactive_hand_contact_penalty(env) -> torch.Tensor:
+    return env.inactive_hand_contact
 
 
 @configclass
 class G1Dex1DoorOpenRewardsCfg:
     drc_total = RewTerm(func=hier_drc_reward, weight=1.0)
-    task_success = RewTerm(func=task_success_reward, weight=1.0)
-    inactive_left_contact = RewTerm(func=inactive_left_contact_penalty, weight=-2.0)
-    command_smoothness = RewTerm(func=command_smoothness, weight=-0.02)
-    root_object_facing = RewTerm(func=root_object_facing_reward, weight=2.0)
-    both_hand_center_tracking_error_penalty = RewTerm(
-        func=both_hand_center_tracking_error_penalty,
-        weight=-2.0,
+    motion_quality = RewTerm(
+        func=contact_conditioned_motion_reward,
+        weight=1.0,
+        params={"approach_scale": 2.0, "couple_scale": 20.0, "manip_scale": 100.0},
     )
+    task_success = RewTerm(func=task_success_reward, weight=1.0)
+    inactive_hand_contact = RewTerm(func=inactive_hand_contact_penalty, weight=-2.0)
+    root_object_facing = RewTerm(func=approach_root_object_facing_reward, weight=2.0)
     is_alive = RewTerm(func=mdp.is_alive, weight=1.0)
     is_terminated = RewTerm(func=mdp.is_terminated, weight=-200.0)
     lin_vel_z_l2 = RewTerm(func=mdp.lin_vel_z_l2, weight=-1.0)
@@ -65,7 +67,7 @@ class G1Dex1DoorOpenRewardsCfg:
     joint_vel = RewTerm(func=mdp.joint_vel_l2, weight=-0.0005)
     undesired_contacts = RewTerm(
         func=mdp.undesired_contacts,
-        weight=-1.0,
+        weight=-5.0,
         params={
             "threshold": 1.0,
             "sensor_cfg": SceneEntityCfg(

@@ -1,0 +1,17 @@
+{
+    "version": "1.0",
+    "file_records": [
+        {
+            "source_url": "/home/kaijun/Downloads/agtrader/crash_can/textures_crushed_lowpoly/2k/can_crushed_lowpoly_BaseColor_Opacity_2k.png",
+            "source_hash": "4eb6014ef1ec22cd6f6804328569ebd2d97d6042",
+            "target_url": "./textures_crushed_lowpoly/2k/can_crushed_lowpoly_BaseColor_Opacity_2k.png",
+            "target_hash": "0a463cc852392392cc416608d27c7e1f646755e6"
+        },
+        {
+            "source_url": "/home/kaijun/Downloads/agtrader/crash_can/textures_crushed_lowpoly/2k/can_crushed_lowpoly_Normal_2k.png",
+            "source_hash": "4df6b8b4ed7bfe6a7771ebe62de45addbdf306dd",
+            "target_url": "./textures_crushed_lowpoly/2k/can_crushed_lowpoly_Normal_2k.png",
+            "target_hash": "d9ea7abad4ac8198aaf147cf8ab0fdbf59f71e3c"
+        }
+    ]
+}

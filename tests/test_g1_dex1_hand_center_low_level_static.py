@@ -191,3 +191,22 @@ def test_dex1_hand_center_play_uses_full_command_limits_without_orientation_over
     assert "cmd.ranges.roll" not in play_source
     assert "cmd.ranges.ee_pitch" not in play_source
     assert "cmd.ranges.yaw" not in play_source
+
+
+def test_dex1_hier_low_level_interface_matches_stick_figure_anchor():
+    command_source = _read(
+        REPO_ROOT
+        / "source/hbc_lab/hbc_lab/tasks/manager_based/skill/g1_dex1_hier_drc/mdp/commands.py"
+    )
+    observation_source = _read(
+        REPO_ROOT
+        / "source/hbc_lab/hbc_lab/tasks/manager_based/skill/g1_dex1_hier_drc/mdp/low_level_observations.py"
+    )
+
+    for source in (command_source, observation_source):
+        assert 'find_bodies("left_shoulder_roll_link")' in source
+        assert 'find_bodies("right_shoulder_roll_link")' in source
+        assert "full_posture_anchor_pose_w(" in source
+        assert "anchor_height_offset = 0.43" not in source
+        assert 'find_bodies("left_shoulder_pitch_link")' not in source
+        assert 'find_bodies("right_shoulder_pitch_link")' not in source

@@ -68,6 +68,8 @@ import torch
 from packaging import version
 from rsl_rl.runners import OnPolicyRunner
 
+from hbc_lab.learning import register_rsl_rl_extensions
+
 from isaaclab.envs import (
     DirectMARLEnv,
     DirectMARLEnvCfg,
@@ -100,6 +102,8 @@ torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 torch.backends.cudnn.deterministic = False
 torch.backends.cudnn.benchmark = False
+
+register_rsl_rl_extensions()
 
 
 @hydra_task_config(args_cli.task, "rsl_rl_cfg_entry_point")
@@ -154,7 +158,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     runner.add_git_repo_to_log(__file__)
     if agent_cfg.resume or agent_cfg.algorithm.class_name == "Distillation":
         print(f"[INFO]: Loading model checkpoint from: {resume_path}")
-        runner.load(resume_path)
+        runner.load(resume_path, load_optimizer=getattr(agent_cfg, "load_optimizer", True))
 
     dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
     dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)

@@ -8,6 +8,7 @@ from isaaclab.assets import ArticulationCfg
 from isaaclab.markers.config import FRAME_MARKER_CFG
 from isaaclab.sensors import FrameTransformerCfg
 from isaaclab.sensors.frame_transformer import OffsetCfg
+from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
 
 ARTICULATED_MODEL_DIR = Path(__file__).resolve().parent / "models" / "articulated"
@@ -126,6 +127,69 @@ CART_FRAME_CFG = FrameTransformerCfg(
             offset=OffsetCfg(
                 pos=(0.0, 0.0, 0.0),
                 rot=(0.707, 0.0, 0.707, 0.0),
+            ),
+        ),
+    ],
+)
+
+
+SEKTION_CABINET_CFG = ArticulationCfg(
+    prim_path="{ENV_REGEX_NS}/Cabinet",
+    spawn=sim_utils.UsdFileCfg(
+        usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Sektion_Cabinet/sektion_cabinet_instanceable.usd",
+        activate_contact_sensors=True,
+        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            enabled_self_collisions=False,
+        ),
+    ),
+    init_state=ArticulationCfg.InitialStateCfg(
+        pos=(0.0, 0.0, 0.4),
+        rot=(0.0, 0.0, 0.0, 1.0),
+        joint_pos={
+            "door_left_joint": 0.0,
+            "door_right_joint": 0.0,
+            "drawer_bottom_joint": 0.0,
+            "drawer_top_joint": 0.0,
+        },
+    ),
+    actuators={
+        "drawers": ImplicitActuatorCfg(
+            joint_names_expr=["drawer_top_joint", "drawer_bottom_joint"],
+            effort_limit_sim=87.0,
+            velocity_limit_sim=100.0,
+            stiffness=1.0,
+            damping=0.1,
+            friction=0.1,
+        ),
+        "doors": ImplicitActuatorCfg(
+            joint_names_expr=["door_left_joint", "door_right_joint"],
+            effort_limit_sim=87.0,
+            velocity_limit_sim=100.0,
+            stiffness=10.0,
+            damping=2.5,
+        ),
+    },
+)
+
+SEKTION_CABINET_FRAME_CFG = FrameTransformerCfg(
+    prim_path="{ENV_REGEX_NS}/Cabinet/sektion",
+    debug_vis=True,
+    visualizer_cfg=FRAME_MARKER_SMALL_CFG.replace(prim_path="/Visuals/SektionCabinetFrameTransformer"),
+    target_frames=[
+        FrameTransformerCfg.FrameCfg(
+            prim_path="{ENV_REGEX_NS}/Cabinet/drawer_handle_top",
+            name="drawer_handle_top",
+            offset=OffsetCfg(
+                pos=(0.305, 0.0, 0.01),
+                rot=(0.5, 0.5, -0.5, -0.5),
+            ),
+        ),
+        FrameTransformerCfg.FrameCfg(
+            prim_path="{ENV_REGEX_NS}/Cabinet/drawer_handle_bottom",
+            name="drawer_handle_bottom",
+            offset=OffsetCfg(
+                pos=(0.305, 0.0, 0.01),
+                rot=(0.5, 0.5, -0.5, -0.5),
             ),
         ),
     ],

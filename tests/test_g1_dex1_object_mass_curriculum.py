@@ -67,6 +67,48 @@ def test_balanced_active_hand_progress_preserves_single_hand_curriculum():
     assert torch.allclose(balanced, torch.tensor(0.7))
 
 
+def test_balanced_active_hand_progress_conservatively_sanitizes_nonfinite_envs():
+    module = _load_mass_curriculum_module()
+
+    left_mean, right_mean, balanced = module.balanced_active_hand_progress(
+        torch.tensor([0.8, float("nan"), 0.1, 0.2]),
+        torch.tensor([0, 0, 1, 1]),
+    )
+
+    assert torch.allclose(left_mean, torch.tensor(0.4))
+    assert torch.allclose(right_mean, torch.tensor(0.15))
+    assert torch.allclose(balanced, torch.tensor(0.15))
+
+
+def test_monotonic_curriculum_update_recovers_nonfinite_global_state():
+    module = _load_mass_curriculum_module()
+
+    next_ema, next_level = module.update_monotonic_curriculum_level(
+        torch.tensor(float("nan")),
+        torch.tensor(float("nan")),
+        torch.tensor(0.18),
+        alpha=0.01,
+    )
+
+    assert torch.isfinite(next_ema)
+    assert torch.isfinite(next_level)
+    assert torch.allclose(next_ema, torch.tensor(0.18))
+    assert torch.allclose(next_level, torch.tensor(0.18))
+
+
+def test_object_mass_sampling_never_propagates_nonfinite_curriculum_level():
+    module = _load_mass_curriculum_module()
+
+    masses = module.sample_object_masses(
+        torch.tensor(float("nan")),
+        num_envs=1024,
+        device=torch.device("cpu"),
+    )
+
+    assert torch.isfinite(masses).all()
+    assert torch.all((masses >= 0.15) & (masses <= 25.0))
+
+
 def test_object_mass_curriculum_defines_single_expression_log_schedule():
     source = _read(MODULE_PATH)
 
@@ -116,9 +158,9 @@ def test_g1_dex1_reset_object_applies_mass_curriculum_to_physx_masses():
     assert "DRC/object_mass_curriculum_level" in env_source
     assert "DRC/object_mass_mean" in env_source
     assert "balanced_active_hand_progress" in env_source
-    assert "DRC/object_mass_w_manip_left_mean" in env_source
-    assert "DRC/object_mass_w_manip_right_mean" in env_source
-    assert "DRC/object_mass_w_manip_balanced" in env_source
+    assert "self.object_mass_w_manip_left_mean" in env_source
+    assert "self.object_mass_w_manip_right_mean" in env_source
+    assert "self.object_mass_w_manip_balanced" in env_source
     update_source = env_source.split("    def _update_object_mass_curriculum", maxsplit=1)[1].split(
         "    def _check_success", maxsplit=1
     )[0]
@@ -129,6 +171,48 @@ def test_g1_dex1_reset_object_applies_mass_curriculum_to_physx_masses():
     assert "anchor_mass=env.cfg.object_mass_anchor_mass" in events_source
     assert "root_physx_view.get_masses()" in events_source
     assert "root_physx_view.set_masses(masses, env_ids.cpu())" in events_source
+
+
+def test_mass_curriculum_reads_progress_only_after_progress_sanitization():
+    env_source = _read(ENV_PATH)
+    step_source = env_source.split("    def step(", maxsplit=1)[1]
+    progress_source = env_source.split("    def _compute_progress", maxsplit=1)[1].split(
+        "    def _update_contact_target_regions", maxsplit=1
+    )[0]
+
+    assert "self._update_domain_randomization_curriculum()" not in progress_source
+    assert "self._update_object_mass_curriculum()" not in progress_source
+    assert step_source.index("self._sanitize_progress_buffers()") < step_source.index(
+        "self._update_domain_randomization_curriculum()"
+    )
+    assert step_source.index("self._sanitize_progress_buffers()") < step_source.index(
+        "self._update_object_mass_curriculum()"
+    )
+
+
+def test_grasp_reference_mass_curriculum_uses_physical_grasp_not_strict_pose_gate():
+    env_cfg_source = _read(ENV_CFG_PATH)
+    env_source = _read(ENV_PATH)
+    multishape_cfg_source = _read(
+        REPO_ROOT
+        / "source/hbc_lab/hbc_lab/tasks/manager_based/skill/g1_dex1_hier_drc/config/multishape_bps_env_cfg.py"
+    )
+    progress_source = env_source.split("    def _compute_progress", maxsplit=1)[1].split(
+        "    def _update_contact_target_regions", maxsplit=1
+    )[0]
+    update_source = env_source.split("    def _update_object_mass_curriculum", maxsplit=1)[1].split(
+        "    def _update_domain_randomization_curriculum", maxsplit=1
+    )[0]
+
+    assert "object_mass_use_physical_grasp: bool = False" in env_cfg_source
+    assert "self.c_physical_grasp" in env_source
+    assert "progress.contact * progress.grip" in progress_source
+    assert "self.cfg.object_mass_use_physical_grasp" in update_source
+    assert "self.c_physical_grasp.detach()" in update_source
+    graspref_cfg = multishape_cfg_source.split(
+        "class G1Dex1HierDrcMultiShapeGraspRefEnvCfg", maxsplit=1
+    )[1].split("class G1Dex1HierDrcMultiShapeGraspRefPlayEnvCfg", maxsplit=1)[0]
+    assert "self.object_mass_use_physical_grasp = True" in graspref_cfg
 
 
 def test_g1_dex1_play_starts_at_final_object_mass_curriculum_level():

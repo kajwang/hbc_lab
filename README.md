@@ -2,6 +2,11 @@
 
 HBC Lab is a lightweight IsaacLab workspace for humanoid whole-body control experiments.
 
+Project references:
+
+- [`IDEA_PLAN.md`](IDEA_PLAN.md): full research direction and paper plan.
+- [`docs/GO2_ARX5_TASK_MIGRATION_GUIDE.md`](docs/GO2_ARX5_TASK_MIGRATION_GUIDE.md): reusable PnP, cart, door, drawer, DRC, keyframe, and action-saturation guidance for the Robot Lab Go2+ARX5 implementation.
+
 The first target is a low-level Unitree G1 velocity locomotion policy that can be trained
 before the object-centric interaction pipeline is added. This repository reuses the existing
 Unitree RSL-RL runner pattern, then vendors the Unitree official G1 29DoF velocity recipe

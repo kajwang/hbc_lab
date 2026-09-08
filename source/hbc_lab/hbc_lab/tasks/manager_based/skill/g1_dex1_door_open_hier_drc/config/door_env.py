@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import torch
 
-from hbc_lab.tasks.manager_based.skill.contact_labels import ContactMode, RIGHT_HAND
+from hbc_lab.tasks.manager_based.skill.contact_labels import ContactMode
 from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.config.g1_dex1_env import (
     G1Dex1HierDrcEnv,
 )
@@ -11,6 +11,14 @@ from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.mdp.contact_progress imp
 )
 from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.mdp.drc_math import compute_drc_weights, update_ema
 from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.mdp.scenes import HAND_CENTER_FRAME_NAME
+from hbc_lab.tasks.manager_based.skill.pose_motion import (
+    compose_local_axis_pose,
+    compute_cumulative_keyframe_progress,
+    compute_masked_pose_error,
+    gather_keyframe,
+    quaternion_apply,
+    quaternion_conjugate,
+)
 
 
 class G1Dex1DoorOpenEnv(G1Dex1HierDrcEnv):
@@ -19,22 +27,45 @@ class G1Dex1DoorOpenEnv(G1Dex1HierDrcEnv):
         device = cfg.sim.device
         self.handle_angle = torch.zeros(num_envs, device=device)
         self.hinge_angle = torch.zeros(num_envs, device=device)
-        self.inactive_left_contact = torch.zeros(num_envs, device=device)
+        self.inactive_hand_contact = torch.zeros(num_envs, device=device)
         self.latch_released = torch.zeros(num_envs, dtype=torch.bool, device=device)
         self.door_initial_pose_pending = torch.zeros(num_envs, dtype=torch.bool, device=device)
         self.door_target_update_delay = torch.zeros(num_envs, dtype=torch.long, device=device)
         self._door_frame_indices: dict[str, int] = {}
+        self.handle_body_id: int | None = None
+        self.motion_target_pos_w = torch.zeros(num_envs, 2, 3, device=device)
+        self.motion_target_quat_w = torch.zeros(num_envs, 2, 4, device=device)
+        self.motion_target_quat_w[..., 0] = 1.0
+        self.motion_position_mask = torch.ones(num_envs, 2, 3, device=device)
+        self.motion_rotation_mask = torch.ones(num_envs, 2, 3, device=device)
+        self.motion_keyframe_index = torch.zeros(num_envs, dtype=torch.long, device=device)
+        self.motion_keyframe_stable_count = torch.zeros(num_envs, dtype=torch.long, device=device)
+        self.motion_guide_valid = torch.zeros(num_envs, dtype=torch.bool, device=device)
+        self.motion_sequence_complete = torch.zeros(num_envs, dtype=torch.bool, device=device)
+        self.motion_phase_initial_error = torch.zeros(num_envs, device=device)
+        self.motion_phase_initial_error_valid = torch.zeros(num_envs, dtype=torch.bool, device=device)
+        self.motion_cumulative_progress = torch.zeros(num_envs, device=device)
+        self.motion_progress = torch.zeros(num_envs, device=device)
+        self.motion_position_error = torch.zeros(num_envs, device=device)
+        self.motion_orientation_error = torch.zeros(num_envs, device=device)
+        self.motion_keyframe_reached = torch.zeros(num_envs, dtype=torch.bool, device=device)
+        self.motion_current_pos_w = torch.zeros(num_envs, 3, device=device)
+        self.motion_current_quat_w = torch.zeros(num_envs, 4, device=device)
+        self.motion_current_quat_w[:, 0] = 1.0
         super().__init__(cfg, render_mode, **kwargs)
 
         door = self.scene["object"]
         hinge_ids, hinge_names = door.find_joints("joint_1")
         handle_ids, handle_names = door.find_joints("joint_2")
-        if len(hinge_ids) != 1 or len(handle_ids) != 1:
+        handle_body_ids, handle_body_names = door.find_bodies("link_2")
+        if len(hinge_ids) != 1 or len(handle_ids) != 1 or len(handle_body_ids) != 1:
             raise RuntimeError(
-                f"Door requires joint_1 and joint_2, resolved hinge={hinge_names}, handle={handle_names}"
+                "Door requires joint_1, joint_2, and link_2, "
+                f"resolved hinge={hinge_names}, handle={handle_names}, body={handle_body_names}"
             )
         self.hinge_joint_id = int(hinge_ids[0])
         self.handle_joint_id = int(handle_ids[0])
+        self.handle_body_id = int(handle_body_ids[0])
 
     def _get_door_frame_index(self, frame_name: str) -> int:
         if frame_name not in self._door_frame_indices:
@@ -48,9 +79,152 @@ class G1Dex1DoorOpenEnv(G1Dex1HierDrcEnv):
         index = self._get_door_frame_index("door_handle")
         return self.scene["object_frame"].data.target_pos_w[:, index, :]
 
+    def _door_handle_quat_w(self) -> torch.Tensor:
+        index = self._get_door_frame_index("door_handle")
+        return self.scene["object_frame"].data.target_quat_w[:, index, :]
+
+    def _door_handle_pivot_pos_w(self) -> torch.Tensor:
+        if self.handle_body_id is None:
+            handle_body_ids, handle_body_names = self.scene["object"].find_bodies("link_2")
+            if len(handle_body_ids) != 1:
+                raise RuntimeError(f"Door requires link_2, resolved body={handle_body_names}")
+            self.handle_body_id = int(handle_body_ids[0])
+        return self.scene["object"].data.body_pos_w[:, self.handle_body_id, :]
+
     def _door_goal_pos_w(self) -> torch.Tensor:
         index = self._get_door_frame_index("door_handle_goal")
         return self.scene["object_frame"].data.target_pos_w[:, index, :]
+
+    def _door_goal_quat_w(self) -> torch.Tensor:
+        index = self._get_door_frame_index("door_handle_goal")
+        return self.scene["object_frame"].data.target_quat_w[:, index, :]
+
+    def _initialize_motion_guide(
+        self,
+        env_ids: torch.Tensor,
+        handle_pos_w: torch.Tensor,
+        handle_quat_w: torch.Tensor,
+        handle_pivot_pos_w: torch.Tensor,
+        goal_pos_w: torch.Tensor,
+        goal_quat_w: torch.Tensor,
+    ) -> None:
+        axis_local = torch.tensor(
+            self.cfg.motion_unlock_axis_local,
+            device=self.device,
+            dtype=handle_quat_w.dtype,
+        ).unsqueeze(0).expand(env_ids.numel(), -1)
+        unlock_angle = torch.full(
+            (env_ids.numel(),),
+            self.cfg.motion_unlock_angle,
+            device=self.device,
+            dtype=handle_quat_w.dtype,
+        )
+        handle_offset_local = quaternion_apply(
+            quaternion_conjugate(handle_quat_w),
+            handle_pos_w - handle_pivot_pos_w,
+        )
+        goal_pivot_pos_w = goal_pos_w - quaternion_apply(goal_quat_w, handle_offset_local)
+        unlock_pos_w, unlock_quat_w = compose_local_axis_pose(
+            handle_pos_w,
+            handle_quat_w,
+            handle_pivot_pos_w,
+            axis_local,
+            unlock_angle,
+        )
+        open_pos_w, open_quat_w = compose_local_axis_pose(
+            goal_pos_w,
+            goal_quat_w,
+            goal_pivot_pos_w,
+            axis_local,
+            unlock_angle,
+        )
+
+        self.motion_target_pos_w[env_ids, 0] = unlock_pos_w
+        self.motion_target_pos_w[env_ids, 1] = open_pos_w
+        self.motion_target_quat_w[env_ids, 0] = unlock_quat_w
+        self.motion_target_quat_w[env_ids, 1] = open_quat_w
+        self.motion_position_mask[env_ids] = 1.0
+        self.motion_rotation_mask[env_ids] = 1.0
+        self.motion_keyframe_index[env_ids] = 0
+        self.motion_keyframe_stable_count[env_ids] = 0
+        self.motion_guide_valid[env_ids] = True
+        self.motion_sequence_complete[env_ids] = False
+        self.motion_phase_initial_error_valid[env_ids] = False
+        self.motion_cumulative_progress[env_ids] = 0.0
+        self.motion_progress[env_ids] = 0.0
+        self.motion_current_pos_w[env_ids] = handle_pos_w
+        self.motion_current_quat_w[env_ids] = handle_quat_w
+
+    def _update_motion_guide(self) -> None:
+        current_pos_w = self._door_handle_pos_w()
+        current_quat_w = self._door_handle_quat_w()
+        self.motion_current_pos_w.copy_(current_pos_w)
+        self.motion_current_quat_w.copy_(current_quat_w)
+        self.motion_keyframe_reached.zero_()
+
+        valid_ids = torch.nonzero(self.motion_guide_valid, as_tuple=False).squeeze(-1)
+        if valid_ids.numel() == 0:
+            self.motion_position_error.zero_()
+            self.motion_orientation_error.zero_()
+            self.motion_cumulative_progress.zero_()
+            self.motion_progress.zero_()
+            return
+
+        target_pos_w = gather_keyframe(self.motion_target_pos_w, self.motion_keyframe_index)
+        target_quat_w = gather_keyframe(self.motion_target_quat_w, self.motion_keyframe_index)
+        position_mask = gather_keyframe(self.motion_position_mask, self.motion_keyframe_index)
+        rotation_mask = gather_keyframe(self.motion_rotation_mask, self.motion_keyframe_index)
+        total_error, position_error, orientation_error = compute_masked_pose_error(
+            current_pos=current_pos_w,
+            current_quat=current_quat_w,
+            target_pos=target_pos_w,
+            target_quat=target_quat_w,
+            position_mask=position_mask,
+            rotation_mask=rotation_mask,
+            position_scale=self.cfg.motion_position_scale,
+            rotation_scale=self.cfg.motion_rotation_scale,
+        )
+        self.motion_position_error.copy_(position_error * self.cfg.motion_position_scale)
+        self.motion_orientation_error.copy_(orientation_error * self.cfg.motion_rotation_scale)
+
+        initialize_phase = self.motion_guide_valid & ~self.motion_phase_initial_error_valid
+        self.motion_phase_initial_error[initialize_phase] = torch.clamp(
+            total_error[initialize_phase],
+            min=torch.finfo(total_error.dtype).eps,
+        )
+        self.motion_phase_initial_error_valid[initialize_phase] = True
+        cumulative, normalized = compute_cumulative_keyframe_progress(
+            current_error=total_error,
+            phase_initial_error=self.motion_phase_initial_error,
+            keyframe_index=self.motion_keyframe_index,
+            num_keyframes=self.motion_target_pos_w.shape[1],
+        )
+        self.motion_cumulative_progress.copy_(
+            torch.where(self.motion_guide_valid, cumulative, torch.zeros_like(cumulative))
+        )
+        self.motion_progress.copy_(
+            torch.where(self.motion_guide_valid, normalized, torch.zeros_like(normalized))
+        )
+        within_target = (
+            (self.motion_position_error <= self.cfg.motion_position_tolerance)
+            & (self.motion_orientation_error <= self.cfg.motion_rotation_tolerance)
+            & self.motion_guide_valid
+        )
+        self.motion_keyframe_stable_count = torch.where(
+            within_target,
+            self.motion_keyframe_stable_count + 1,
+            torch.zeros_like(self.motion_keyframe_stable_count),
+        )
+        stable = self.motion_keyframe_stable_count >= self.cfg.motion_keyframe_stable_steps
+        last_keyframe = self.motion_keyframe_index == self.motion_target_pos_w.shape[1] - 1
+        advance = stable & ~last_keyframe
+        finish = stable & last_keyframe & ~self.motion_sequence_complete
+        self.motion_keyframe_reached = advance | finish
+        self.motion_sequence_complete |= finish
+        self.motion_keyframe_index[advance] += 1
+        self.motion_keyframe_stable_count[advance] = 0
+
+        self.motion_phase_initial_error_valid[advance] = False
 
     def _object_frame_pos_w(self) -> torch.Tensor:
         return self._door_handle_pos_w()
@@ -74,15 +248,33 @@ class G1Dex1DoorOpenEnv(G1Dex1HierDrcEnv):
             return
 
         handle_pos_w = self._door_handle_pos_w()
+        handle_quat_w = self._door_handle_quat_w()
+        handle_pivot_pos_w = self._door_handle_pivot_pos_w()
+        goal_pos_w = self._door_goal_pos_w()
+        goal_quat_w = self._door_goal_quat_w()
         target_region = torch.zeros(self.num_envs, 2, 3, device=self.device)
-        target_region[:, RIGHT_HAND, :] = handle_pos_w
-        self.contact_label.set_target_region(env_ids, target_region[env_ids])
-        self.object_target_pos_w[env_ids] = self._door_goal_pos_w()[env_ids]
+        active_mask = self.contact_label.effector_mask.to(dtype=torch.bool)
+        target_region = torch.where(active_mask.unsqueeze(-1), handle_pos_w.unsqueeze(1), target_region)
+        target_orientation = handle_quat_w.unsqueeze(1).expand(-1, 2, -1)
+        self.contact_label.set_target_region_pose(
+            env_ids,
+            target_region[env_ids],
+            target_orientation[env_ids],
+        )
+        self.object_target_pos_w[env_ids] = goal_pos_w[env_ids]
 
         ready = self.door_initial_pose_pending[env_ids]
         ready_ids = env_ids[ready]
         if ready_ids.numel() > 0:
             self.object_initial_pos_w[ready_ids] = handle_pos_w[ready_ids]
+            self._initialize_motion_guide(
+                ready_ids,
+                handle_pos_w[ready_ids],
+                handle_quat_w[ready_ids],
+                handle_pivot_pos_w[ready_ids],
+                goal_pos_w[ready_ids],
+                goal_quat_w[ready_ids],
+            )
             self.door_initial_pose_pending[ready_ids] = False
 
     def _simulate_door_latch(self) -> None:
@@ -104,6 +296,7 @@ class G1Dex1DoorOpenEnv(G1Dex1HierDrcEnv):
 
     def _compute_progress(self):
         self._update_contact_target_regions()
+        self._update_motion_guide()
         hand_center_pos_w = self.scene[HAND_CENTER_FRAME_NAME].data.target_pos_w
         target_region = self.contact_label.target_region
         left_distance = torch.norm(hand_center_pos_w[:, 0, :] - target_region[:, 0, :], dim=-1)
@@ -133,7 +326,7 @@ class G1Dex1DoorOpenEnv(G1Dex1HierDrcEnv):
         self.active_contact_cos_sim = progress.cos_sim
         self.left_hand_contact = self._step_left_contact
         self.right_hand_contact = self._step_right_contact
-        self.inactive_left_contact = torch.stack(
+        left_contact = torch.stack(
             (
                 self._step_link_contact["left_Link1_2"],
                 self._step_link_contact["left_Link1_3"],
@@ -142,6 +335,16 @@ class G1Dex1DoorOpenEnv(G1Dex1HierDrcEnv):
             ),
             dim=-1,
         ).amax(dim=-1)
+        right_contact = torch.stack(
+            (
+                self._step_link_contact["right_Link1_2"],
+                self._step_link_contact["right_Link1_3"],
+                self._step_link_contact["right_Link2_2"],
+                self._step_link_contact["right_Link2_3"],
+            ),
+            dim=-1,
+        ).amax(dim=-1)
+        self.inactive_hand_contact = torch.where(self.active_hand == 0, right_contact, left_contact)
 
         door = self.scene["object"]
         self.hinge_angle = door.data.joint_pos[:, self.hinge_joint_id]
@@ -172,10 +375,24 @@ class G1Dex1DoorOpenEnv(G1Dex1HierDrcEnv):
         self.door_target_update_delay[env_ids] = 1
         self.handle_angle[env_ids] = 0.0
         self.hinge_angle[env_ids] = 0.0
-        self.inactive_left_contact[env_ids] = 0.0
+        self.inactive_hand_contact[env_ids] = 0.0
         self.latch_released[env_ids] = False
-        self.active_hand[env_ids] = RIGHT_HAND
-        mask = torch.tensor((0.0, 1.0), device=self.device).repeat(env_ids.numel(), 1)
+        self.motion_keyframe_index[env_ids] = 0
+        self.motion_keyframe_stable_count[env_ids] = 0
+        self.motion_guide_valid[env_ids] = False
+        self.motion_sequence_complete[env_ids] = False
+        self.motion_phase_initial_error[env_ids] = 0.0
+        self.motion_phase_initial_error_valid[env_ids] = False
+        self.motion_cumulative_progress[env_ids] = 0.0
+        self.motion_progress[env_ids] = 0.0
+        self.motion_position_error[env_ids] = 0.0
+        self.motion_orientation_error[env_ids] = 0.0
+        self.motion_keyframe_reached[env_ids] = False
+        fixed_mask = self.cfg.commands.high_level.fixed_effector_mask
+        if fixed_mask is None or sum(value > 0.0 for value in fixed_mask) != 1:
+            raise ValueError("DoorOpen requires exactly one active effector in fixed_effector_mask")
+        mask = torch.tensor(fixed_mask, device=self.device).repeat(env_ids.numel(), 1)
+        self.active_hand[env_ids] = torch.argmax(mask, dim=-1)
         self.contact_label.set_effector_mask(env_ids, mask)
         self.contact_label.set_contact_mode(env_ids, ContactMode.GRASP)
 
@@ -184,4 +401,11 @@ class G1Dex1DoorOpenEnv(G1Dex1HierDrcEnv):
         self.extras["log"]["Door/handle_angle_mean"] = self.handle_angle.mean()
         self.extras["log"]["Door/hinge_angle_mean"] = self.hinge_angle.mean()
         self.extras["log"]["Door/latch_released_ratio"] = self.latch_released.float().mean()
-        self.extras["log"]["Door/inactive_left_contact_mean"] = self.inactive_left_contact.mean()
+        self.extras["log"]["Door/inactive_hand_contact_mean"] = self.inactive_hand_contact.mean()
+        self.extras["log"]["Motion/keyframe_index_mean"] = self.motion_keyframe_index.float().mean()
+        self.extras["log"]["Motion/position_error_mean"] = self.motion_position_error.mean()
+        self.extras["log"]["Motion/orientation_error_mean"] = self.motion_orientation_error.mean()
+        self.extras["log"]["Motion/progress_mean"] = self.motion_progress.mean()
+        self.extras["log"]["Motion/cumulative_progress_mean"] = self.motion_cumulative_progress.mean()
+        self.extras["log"]["Motion/keyframe_reached_ratio"] = self.motion_keyframe_reached.float().mean()
+        self.extras["log"]["Motion/sequence_complete_ratio"] = self.motion_sequence_complete.float().mean()

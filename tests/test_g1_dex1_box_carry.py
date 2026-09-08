@@ -18,6 +18,14 @@ def _read(path: Path) -> str:
     return path.read_text()
 
 
+def test_box_carry_uses_shared_contact_conditioned_motion_quality():
+    source = _read(MDP_ROOT / "rewards.py")
+
+    assert "contact_conditioned_motion_reward" in source
+    assert source.count("motion_quality = RewTerm(") == 1
+    assert '"manip_scale": 200.0' in source
+
+
 def _load_contact_progress_module():
     module_path = MDP_ROOT / "contact_progress.py"
     assert module_path.exists(), f"Missing BoxCarry contact progress module: {module_path}"

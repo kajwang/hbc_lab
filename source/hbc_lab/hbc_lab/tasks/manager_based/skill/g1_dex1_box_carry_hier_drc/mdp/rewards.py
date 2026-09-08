@@ -7,8 +7,7 @@ from isaaclab.utils import configclass
 
 from hbc_lab.tasks.locomotion import mdp
 from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.mdp.rewards import (
-    both_hand_center_tracking_error_penalty,
-    command_smoothness,
+    contact_conditioned_motion_reward,
     object_fall_penalty,
     root_object_facing_reward,
     task_success_reward,
@@ -64,14 +63,14 @@ def hier_drc_reward(
 @configclass
 class G1Dex1BoxCarryRewardsCfg:
     drc_total = RewTerm(func=hier_drc_reward, weight=1.0)
+    motion_quality = RewTerm(
+        func=contact_conditioned_motion_reward,
+        weight=1.0,
+        params={"approach_scale": 2.0, "couple_scale": 20.0, "manip_scale": 200.0},
+    )
     task_success = RewTerm(func=task_success_reward, weight=1.0)
     object_fall = RewTerm(func=object_fall_penalty, weight=-2.0)
-    command_smoothness = RewTerm(func=command_smoothness, weight=-0.02)
     root_object_facing = RewTerm(func=root_object_facing_reward, weight=2.0)
-    both_hand_center_tracking_error_penalty = RewTerm(
-        func=both_hand_center_tracking_error_penalty,
-        weight=-2.0,
-    )
     is_alive = RewTerm(func=mdp.is_alive, weight=1.0)
     is_terminated = RewTerm(func=mdp.is_terminated, weight=-200.0)
     lin_vel_z_l2 = RewTerm(func=mdp.lin_vel_z_l2, weight=-1.0)

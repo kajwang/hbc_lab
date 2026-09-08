@@ -13,7 +13,7 @@ from isaaclab.utils import configclass
 from isaaclab.utils import math as math_utils
 from isaaclab.utils.math import yaw_quat
 
-from hbc_lab.tasks.locomotion.mdp.pose_transforms import posture_anchor_pose_w
+from hbc_lab.tasks.locomotion.mdp.pose_transforms import full_posture_anchor_pose_w
 from hbc_lab.tasks.manager_based.skill.contact_labels import ContactMode
 from .contact_progress import sample_active_hands
 
@@ -27,15 +27,16 @@ class G1Dex1HierCommand(CommandTerm):
         self.robot: Articulation = env.scene[cfg.asset_name]
         self.base_velocity = torch.zeros(self.num_envs, 3, device=self.device)
         self.posture_command = torch.zeros(self.num_envs, 2, device=self.device)
-        self.left_wrist_pose_b = torch.zeros(self.num_envs, 7, device=self.device)
-        self.right_wrist_pose_b = torch.zeros(self.num_envs, 7, device=self.device)
+        self.left_hand_center_pose_a = torch.zeros(self.num_envs, 7, device=self.device)
+        self.right_hand_center_pose_a = torch.zeros(self.num_envs, 7, device=self.device)
         self.left_grip = torch.zeros(self.num_envs, 1, device=self.device)
         self.right_grip = torch.zeros(self.num_envs, 1, device=self.device)
         self.active_hand = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self.contact_label = env.contact_label
-        self.left_anchor_body_id = self.robot.find_bodies("left_shoulder_pitch_link")[0][0]
-        self.right_anchor_body_id = self.robot.find_bodies("right_shoulder_pitch_link")[0][0]
-        self.anchor_height_offset = 0.43
+        self.left_anchor_body_id = self.robot.find_bodies("left_shoulder_roll_link")[0][0]
+        self.right_anchor_body_id = self.robot.find_bodies("right_shoulder_roll_link")[0][0]
+        self.left_anchor_offset_b: torch.Tensor | None = None
+        self.right_anchor_offset_b: torch.Tensor | None = None
         self._set_defaults(torch.arange(self.num_envs, device=self.device))
 
     @property
@@ -44,8 +45,8 @@ class G1Dex1HierCommand(CommandTerm):
             (
                 self.base_velocity,
                 self.posture_command,
-                self.left_wrist_pose_b,
-                self.right_wrist_pose_b,
+                self.left_hand_center_pose_a,
+                self.right_hand_center_pose_a,
                 self.left_grip,
                 self.right_grip,
                 self.active_hand.unsqueeze(-1).to(dtype=self.base_velocity.dtype),
@@ -57,15 +58,15 @@ class G1Dex1HierCommand(CommandTerm):
         self,
         base_velocity: torch.Tensor,
         posture_command: torch.Tensor,
-        left_wrist_pose_b: torch.Tensor,
-        right_wrist_pose_b: torch.Tensor,
+        left_hand_center_pose_a: torch.Tensor,
+        right_hand_center_pose_a: torch.Tensor,
         left_grip: torch.Tensor,
         right_grip: torch.Tensor,
     ) -> None:
         self.base_velocity[:] = base_velocity
         self.posture_command[:] = posture_command
-        self.left_wrist_pose_b[:] = left_wrist_pose_b
-        self.right_wrist_pose_b[:] = right_wrist_pose_b
+        self.left_hand_center_pose_a[:] = left_hand_center_pose_a
+        self.right_hand_center_pose_a[:] = right_hand_center_pose_a
         self.left_grip[:] = left_grip
         self.right_grip[:] = right_grip
 
@@ -73,8 +74,12 @@ class G1Dex1HierCommand(CommandTerm):
         self.base_velocity[env_ids] = 0.0
         self.posture_command[env_ids, 0] = self.cfg.default_root_height
         self.posture_command[env_ids, 1] = self.cfg.default_torso_pitch
-        self.left_wrist_pose_b[env_ids] = torch.tensor(self.cfg.default_left_wrist_pose_b, device=self.device)
-        self.right_wrist_pose_b[env_ids] = torch.tensor(self.cfg.default_right_wrist_pose_b, device=self.device)
+        self.left_hand_center_pose_a[env_ids] = torch.tensor(
+            self.cfg.default_left_hand_center_pose_a, device=self.device
+        )
+        self.right_hand_center_pose_a[env_ids] = torch.tensor(
+            self.cfg.default_right_hand_center_pose_a, device=self.device
+        )
         self.left_grip[env_ids] = 0.0
         self.right_grip[env_ids] = 0.0
 
@@ -113,22 +118,22 @@ class G1Dex1HierCommand(CommandTerm):
         if debug_vis:
             if not hasattr(self, "base_velocity_visualizer"):
                 self.base_velocity_visualizer = VisualizationMarkers(self.cfg.base_velocity_visualizer_cfg)
-                self.left_wrist_visualizer = VisualizationMarkers(self.cfg.left_wrist_visualizer_cfg)
-                self.right_wrist_visualizer = VisualizationMarkers(self.cfg.right_wrist_visualizer_cfg)
+                self.left_hand_center_visualizer = VisualizationMarkers(self.cfg.left_hand_center_visualizer_cfg)
+                self.right_hand_center_visualizer = VisualizationMarkers(self.cfg.right_hand_center_visualizer_cfg)
                 self.posture_command_visualizer = VisualizationMarkers(self.cfg.posture_command_visualizer_cfg)
                 self.grip_visualizer = VisualizationMarkers(self.cfg.grip_visualizer_cfg)
                 self.active_hand_visualizer = VisualizationMarkers(self.cfg.active_hand_visualizer_cfg)
             self.base_velocity_visualizer.set_visibility(True)
-            self.left_wrist_visualizer.set_visibility(True)
-            self.right_wrist_visualizer.set_visibility(True)
+            self.left_hand_center_visualizer.set_visibility(True)
+            self.right_hand_center_visualizer.set_visibility(True)
             self.posture_command_visualizer.set_visibility(True)
             self.grip_visualizer.set_visibility(True)
             self.active_hand_visualizer.set_visibility(True)
         else:
             if hasattr(self, "base_velocity_visualizer"):
                 self.base_velocity_visualizer.set_visibility(False)
-                self.left_wrist_visualizer.set_visibility(False)
-                self.right_wrist_visualizer.set_visibility(False)
+                self.left_hand_center_visualizer.set_visibility(False)
+                self.right_hand_center_visualizer.set_visibility(False)
                 self.posture_command_visualizer.set_visibility(False)
                 self.grip_visualizer.set_visibility(False)
                 self.active_hand_visualizer.set_visibility(False)
@@ -142,10 +147,10 @@ class G1Dex1HierCommand(CommandTerm):
         vel_arrow_scale, vel_arrow_quat = self._resolve_xy_velocity_to_arrow(self.base_velocity[:, :2])
         self.base_velocity_visualizer.visualize(vel_marker_pos_w, vel_arrow_quat, vel_arrow_scale)
 
-        left_pos_w, left_quat_w = self._target_pose_w(self.left_wrist_pose_b, "left")
-        right_pos_w, right_quat_w = self._target_pose_w(self.right_wrist_pose_b, "right")
-        self.left_wrist_visualizer.visualize(left_pos_w, left_quat_w)
-        self.right_wrist_visualizer.visualize(right_pos_w, right_quat_w)
+        left_pos_w, left_quat_w = self._target_pose_w(self.left_hand_center_pose_a, "left")
+        right_pos_w, right_quat_w = self._target_pose_w(self.right_hand_center_pose_a, "right")
+        self.left_hand_center_visualizer.visualize(left_pos_w, left_quat_w)
+        self.right_hand_center_visualizer.visualize(right_pos_w, right_quat_w)
 
         posture_arrow_pos_w, posture_arrow_quat_w = self._resolve_posture_arrow()
         self.posture_command_visualizer.visualize(posture_arrow_pos_w, posture_arrow_quat_w)
@@ -192,20 +197,28 @@ class G1Dex1HierCommand(CommandTerm):
 
     def _anchor_pose_w(self, side: str) -> tuple[torch.Tensor, torch.Tensor]:
         anchor_id = self.left_anchor_body_id if side == "left" else self.right_anchor_body_id
-        return posture_anchor_pose_w(
+        offset_name = "left_anchor_offset_b" if side == "left" else "right_anchor_offset_b"
+        anchor_offset_b = getattr(self, offset_name)
+        if anchor_offset_b is None:
+            root_yaw_quat = yaw_quat(self.robot.data.root_quat_w)
+            anchor_offset_b = math_utils.quat_apply(
+                math_utils.quat_inv(root_yaw_quat),
+                self.robot.data.body_pos_w[:, anchor_id] - self.robot.data.root_pos_w,
+            ).detach()
+            setattr(self, offset_name, anchor_offset_b)
+        return full_posture_anchor_pose_w(
             self.robot.data.root_pos_w,
             self.robot.data.root_quat_w,
-            self.robot.data.body_pos_w[:, anchor_id],
+            anchor_offset_b,
             self.env.scene.env_origins,
             self.posture_command,
-            self.anchor_height_offset,
         )
 
-    def _target_pose_w(self, pose_b: torch.Tensor, side: str) -> tuple[torch.Tensor, torch.Tensor]:
+    def _target_pose_w(self, pose_a: torch.Tensor, side: str) -> tuple[torch.Tensor, torch.Tensor]:
         return math_utils.combine_frame_transforms(
             *self._anchor_pose_w(side),
-            pose_b[:, :3],
-            pose_b[:, 3:],
+            pose_a[:, :3],
+            pose_a[:, 3:],
         )
 
     def _resolve_grip_marker_scale(self, grip: torch.Tensor) -> torch.Tensor:
@@ -225,7 +238,7 @@ class G1Dex1HierCommandCfg(CommandTermCfg):
     contact_mode: int = int(ContactMode.GRASP)
     default_root_height: float = 0.8
     default_torso_pitch: float = 0.0
-    default_left_wrist_pose_b: tuple[float, float, float, float, float, float, float] = (
+    default_left_hand_center_pose_a: tuple[float, float, float, float, float, float, float] = (
         0.25,
         0.15,
         -0.25,
@@ -234,7 +247,7 @@ class G1Dex1HierCommandCfg(CommandTermCfg):
         0.0,
         -0.7071067811865475,
     )
-    default_right_wrist_pose_b: tuple[float, float, float, float, float, float, float] = (
+    default_right_hand_center_pose_a: tuple[float, float, float, float, float, float, float] = (
         0.25,
         -0.15,
         -0.25,
@@ -246,11 +259,11 @@ class G1Dex1HierCommandCfg(CommandTermCfg):
     base_velocity_visualizer_cfg: VisualizationMarkersCfg = GREEN_ARROW_X_MARKER_CFG.replace(
         prim_path="/Visuals/G1Dex1HierCommand/base_velocity"
     )
-    left_wrist_visualizer_cfg: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
-        prim_path="/Visuals/G1Dex1HierCommand/left_wrist"
+    left_hand_center_visualizer_cfg: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
+        prim_path="/Visuals/G1Dex1HierCommand/left_hand_center"
     )
-    right_wrist_visualizer_cfg: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
-        prim_path="/Visuals/G1Dex1HierCommand/right_wrist"
+    right_hand_center_visualizer_cfg: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
+        prim_path="/Visuals/G1Dex1HierCommand/right_hand_center"
     )
     posture_command_visualizer_cfg: VisualizationMarkersCfg = GREEN_ARROW_X_MARKER_CFG.replace(
         prim_path="/Visuals/G1Dex1HierCommand/posture"
@@ -289,8 +302,8 @@ class G1Dex1HierCommandCfg(CommandTermCfg):
     grip_marker_open_radius: float = 0.025
     grip_marker_closed_radius: float = 0.075
     base_velocity_visualizer_cfg.markers["arrow"].scale = (0.5, 0.5, 0.5)
-    left_wrist_visualizer_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
-    right_wrist_visualizer_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
+    left_hand_center_visualizer_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
+    right_hand_center_visualizer_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
     posture_command_visualizer_cfg.markers["arrow"].scale = (0.15, 0.15, 0.4)
     posture_command_visualizer_cfg.markers["arrow"].visual_material = sim_utils.PreviewSurfaceCfg(
         diffuse_color=(1.0, 0.05, 0.65),

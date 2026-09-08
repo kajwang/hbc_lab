@@ -19,7 +19,7 @@ class G1Dex1CartPushEnvCfg(G1Dex1HierDrcEnvCfg):
     rewards: G1Dex1CartPushRewardsCfg = G1Dex1CartPushRewardsCfg()
 
     object_mass_curriculum_enabled: bool = False
-    cart_handle_target_half_width: float = 0.12
+    cart_handle_target_half_width: float = 0.1
     cart_goal_settle_steps: int = 2
     cart_goal_displacement_x: tuple[float, float] = (2.0, 4.0)
     cart_goal_displacement_y: tuple[float, float] = (-0.5, 0.5)

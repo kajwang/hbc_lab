@@ -36,6 +36,25 @@ def posture_anchor_pose_w(
     return anchor_pos_w, anchor_quat_w
 
 
+def full_posture_anchor_pose_w(
+    root_pos_w: torch.Tensor,
+    root_quat_w: torch.Tensor,
+    anchor_offset_b: torch.Tensor,
+    env_origins: torch.Tensor,
+    posture_command: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Apply commanded root height and torso pitch to the full root-to-anchor offset."""
+    root_yaw_quat = yaw_quat(root_quat_w)
+    zeros = torch.zeros_like(posture_command[:, 1])
+    pitch_quat = quat_from_euler_xyz(zeros, posture_command[:, 1], zeros)
+    anchor_quat_w = quat_mul(root_yaw_quat, pitch_quat)
+
+    root_cmd_pos_w = root_pos_w.clone()
+    root_cmd_pos_w[:, 2] = env_origins[:, 2] + posture_command[:, 0]
+    anchor_pos_w = root_cmd_pos_w + quat_apply(anchor_quat_w, anchor_offset_b)
+    return anchor_pos_w, anchor_quat_w
+
+
 def compose_wrist_chain_quat(wrist_angles: torch.Tensor, fixed_quat: torch.Tensor) -> torch.Tensor:
     """Compose wrist roll, pitch, yaw, and the fixed palm joint in asset-chain order."""
     zeros = torch.zeros_like(wrist_angles[:, 0])

@@ -29,3 +29,16 @@ class G1Dex1HierDrcPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         desired_kl=0.01,
         max_grad_norm=1.0,
     )
+
+
+@configclass
+class G1Dex1HierDrcRandomizedPPORunnerCfg(G1Dex1HierDrcPPORunnerCfg):
+    max_iterations = 50000
+    experiment_name = "g1_dex1_hier_drc_randomized"
+
+
+@configclass
+class G1Dex1HierDrcMultiShapePPORunnerCfg(G1Dex1HierDrcPPORunnerCfg):
+    max_iterations = 50000
+    experiment_name = "g1_dex1_hier_drc_multishape"
+    load_optimizer: bool = False

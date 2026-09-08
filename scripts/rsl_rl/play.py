@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import ast
+import hashlib
+import json
 import os
 import sys
 import time
@@ -13,7 +15,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WBC_ROOT = REPO_ROOT.parent
-sys.path.insert(0, str(REPO_ROOT / "source" / "hbc_lab"))
+HBC_LAB_SOURCE_ROOT = Path(os.environ.get("HBC_LAB_SOURCE_ROOT", REPO_ROOT / "source" / "hbc_lab"))
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+sys.path.insert(0, str(HBC_LAB_SOURCE_ROOT))
 for isaaclab_source in (
     "isaaclab",
     "isaaclab_assets",
@@ -36,14 +40,32 @@ parser.add_argument(
     "--disable_fabric", action="store_true", default=False, help="Disable fabric and use USD I/O operations."
 )
 parser.add_argument("--num_envs", type=int, default=None, help="Number of environments to simulate.")
+parser.add_argument("--seed", type=int, default=None, help="Seed used for deterministic environment evaluation.")
 parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument("--use_pretrained_checkpoint", action="store_true", help="Use the pre-trained checkpoint.")
 parser.add_argument("--real-time", action="store_true", default=False, help="Run in real-time, if possible.")
+parser.add_argument(
+    "--benchmark_steps",
+    type=int,
+    default=0,
+    help="Run exactly this many measured policy steps, write a summary, and exit. Zero disables benchmark mode.",
+)
+parser.add_argument(
+    "--benchmark_warmup_steps",
+    type=int,
+    default=0,
+    help="Number of unmeasured policy steps before a benchmark rollout.",
+)
+parser.add_argument("--benchmark_output", type=str, default=None, help="Optional JSON output path for benchmark mode.")
 cli_args.add_rsl_rl_args(parser)
 AppLauncher.add_app_launcher_args(parser)
 args_cli, hydra_args = parser.parse_known_args()
 if args_cli.video:
     args_cli.enable_cameras = True
+if args_cli.benchmark_steps < 0 or args_cli.benchmark_warmup_steps < 0:
+    parser.error("--benchmark_steps and --benchmark_warmup_steps must be non-negative.")
+if args_cli.benchmark_steps > 0 and args_cli.video:
+    parser.error("Benchmark mode does not support --video; run a separate visual play rollout.")
 
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
@@ -52,6 +74,8 @@ import gymnasium as gym
 import torch
 from rsl_rl.runners import OnPolicyRunner
 
+from evaluation.benchmark_metrics import BenchmarkAccumulator, write_benchmark_summary
+from hbc_lab.learning import register_rsl_rl_extensions
 from hbc_lab.utils.parser_cfg import parse_env_cfg
 from isaaclab.envs import DirectMARLEnv, multi_agent_to_single_agent
 from isaaclab.utils.assets import retrieve_file_path
@@ -59,6 +83,9 @@ from isaaclab.utils.dict import print_dict
 from isaaclab.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
 from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper, export_policy_as_jit, export_policy_as_onnx
 from isaaclab_tasks.utils import get_checkpoint_path
+
+
+register_rsl_rl_extensions()
 
 
 def _parse_override_value(raw_value: str):
@@ -119,6 +146,10 @@ def main():
     )
     agent_cfg: RslRlOnPolicyRunnerCfg = cli_args.parse_rsl_rl_cfg(args_cli.task, args_cli)
     _apply_cfg_overrides(env_cfg, agent_cfg, hydra_args)
+    if hasattr(env_cfg, "apply_grasp_candidate_evaluation"):
+        env_cfg.apply_grasp_candidate_evaluation()
+    if args_cli.seed is not None:
+        env_cfg.seed = agent_cfg.seed
 
     log_root_path = os.path.abspath(os.path.join("logs", "rsl_rl", agent_cfg.experiment_name))
     print(f"[INFO] Loading experiment from directory: {log_root_path}")
@@ -134,6 +165,9 @@ def main():
 
     log_dir = os.path.dirname(resume_path)
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
+
+    if args_cli.seed is not None:
+        env.unwrapped.seed(agent_cfg.seed)
 
     if isinstance(env.unwrapped, DirectMARLEnv):
         env = multi_agent_to_single_agent(env)
@@ -184,11 +218,22 @@ def main():
         obs, _ = env.get_observations()
 
     timestep = 0
+    rollout_step = 0
+    benchmark_accumulator = BenchmarkAccumulator() if args_cli.benchmark_steps > 0 else None
+    benchmark_start_time = None
     while simulation_app.is_running():
         start_time = time.time()
         with torch.inference_mode():
             actions = policy(obs)
-            obs, _, _, _ = env.step(actions)
+            obs, rewards, dones, extras = env.step(actions)
+        if benchmark_accumulator is not None:
+            if rollout_step >= args_cli.benchmark_warmup_steps:
+                if benchmark_start_time is None:
+                    benchmark_start_time = time.perf_counter()
+                benchmark_accumulator.update(rewards, dones, extras)
+            rollout_step += 1
+            if benchmark_accumulator.steps >= args_cli.benchmark_steps:
+                break
         if args_cli.video:
             timestep += 1
             if timestep == args_cli.video_length:
@@ -197,6 +242,25 @@ def main():
         sleep_time = dt - (time.time() - start_time)
         if args_cli.real_time and sleep_time > 0:
             time.sleep(sleep_time)
+
+    if benchmark_accumulator is not None:
+        elapsed_seconds = time.perf_counter() - benchmark_start_time if benchmark_start_time is not None else 0.0
+        checkpoint_hash = hashlib.sha256(Path(resume_path).read_bytes()).hexdigest()
+        summary = {
+            "schema_version": 1,
+            "task": args_cli.task,
+            "checkpoint": str(Path(resume_path).resolve()),
+            "checkpoint_sha256": checkpoint_hash,
+            "seed": agent_cfg.seed,
+            "num_envs": env.unwrapped.num_envs,
+            "warmup_steps": args_cli.benchmark_warmup_steps,
+            **benchmark_accumulator.summary(elapsed_seconds),
+        }
+        print("[INFO] Benchmark summary:")
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        if args_cli.benchmark_output:
+            output_path = write_benchmark_summary(args_cli.benchmark_output, summary)
+            print(f"[INFO] Wrote benchmark summary to: {output_path}")
 
     env.close()
 
