@@ -24,37 +24,37 @@ def _load_pure_functions(path: Path, names: set[str]) -> dict[str, object]:
     return namespace
 
 
-def test_review_layout_pairs_conditions_and_balances_hands_at_four_levels():
+def test_review_layout_balances_independent_families_and_hands():
     functions = _load_pure_functions(
         PACKAGE / "mdp/multi_geometry.py",
-        {"preview_family_and_level", "paired_family_and_constraint", "paired_active_hand"},
+        {"preview_family_and_level", "balanced_family", "balanced_active_hand"},
     )
-    env_ids = torch.arange(128)
+    env_ids = torch.arange(64)
     family, level = functions["preview_family_and_level"](
         env_ids,
         family_count=8,
-        total_envs=128,
+        total_envs=64,
     )
-    paired_family, constrained = functions["paired_family_and_constraint"](env_ids, family_count=8)
-    active_hand = functions["paired_active_hand"](env_ids, family_count=8)
+    balanced_family = functions["balanced_family"](env_ids, family_count=8)
+    active_hand = functions["balanced_active_hand"](env_ids, family_count=8)
 
-    expected_families = [family_id for _ in range(8) for family_id in range(8) for _ in range(2)]
+    expected_families = [family_id for _ in range(8) for family_id in range(8)]
     assert family.tolist() == expected_families
-    assert torch.equal(family, paired_family)
-    assert constrained.tolist() == [condition for _ in range(64) for condition in (False, True)]
-    assert active_hand.tolist() == [hand for group in range(8) for hand in [group % 2] * 16]
+    assert torch.equal(family, balanced_family)
+    assert active_hand.tolist() == [hand for hand in (0, 1, 0, 1, 0, 1, 0, 1) for _ in range(8)]
     expected_levels = torch.tensor(
-        [level_value for level_value in (0.0, 1.0 / 3.0, 2.0 / 3.0, 1.0) for _ in range(32)]
+        [group / 7.0 for group in range(8) for _ in range(8)]
     )
     assert torch.allclose(level, expected_levels)
 
 
-def test_paired_uniform_matches_adjacent_counterfactual_envs():
-    functions = _load_pure_functions(PACKAGE / "mdp/multi_geometry.py", {"paired_uniform"})
-    samples = functions["paired_uniform"](torch.arange(64), -0.35, 0.75, salt=3.0)
+def test_uniform_sample_is_bounded_and_independent():
+    functions = _load_pure_functions(PACKAGE / "mdp/multi_geometry.py", {"uniform_sample"})
+    torch.manual_seed(7)
+    samples = functions["uniform_sample"](torch.arange(64), -0.35, 0.75)
 
-    assert torch.allclose(samples[0::2], samples[1::2])
     assert bool(((samples >= -0.35) & (samples <= 0.75)).all())
+    assert torch.unique(samples).numel() > 32
 
 
 def test_multi_geometry_task_uses_one_obstacle_interface_and_balanced_curricula():
@@ -63,9 +63,10 @@ def test_multi_geometry_task_uses_one_obstacle_interface_and_balanced_curricula(
     registration_source = (PACKAGE / "__init__.py").read_text()
 
     assert "write_obstacle_boxes(" in reset_source
-    assert "TABLE_NOMINAL_CLEARANCE + TABLE_TOP_SIZE[2]" in reset_source
+    assert "platform_surface_height" in reset_source
+    assert 'env.scene["open_platform"]' in reset_source
     assert "object_mass_curriculum_levels" in env_source
-    assert "_condition_and_hand_balanced_progress" in env_source
+    assert "scene_is_constrained" not in env_source
     assert "geometry_safe_reach_rate" in env_source
     assert "task_curriculum_success_rate" not in env_source
     assert '"target_distance": 2.0' in reset_source

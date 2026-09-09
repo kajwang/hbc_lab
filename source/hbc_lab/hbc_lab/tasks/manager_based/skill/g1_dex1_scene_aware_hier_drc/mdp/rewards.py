@@ -25,7 +25,6 @@ def environment_collision_penalty(
     max_force = torch.linalg.norm(force_history, dim=-1).amax(dim=(1, 2))
     penalty = torch.tanh(torch.clamp(max_force - threshold, min=0.0) / force_scale)
 
-    constrained = getattr(env, "scene_is_constrained", None)
     env.extras["log"]["Environment/body_collision_ratio"] = (max_force > threshold).float().mean()
     env.extras["log"]["Environment/body_collision_force_mean"] = max_force.mean()
     family_id = getattr(env, "geometry_family_id", None)
@@ -45,34 +44,40 @@ def environment_collision_penalty(
                 env.extras["log"][f"Environment/{name}_success_ratio"] = (
                     env.task_succeeded[mask].float().mean()
                 )
-                if constrained is not None:
-                    for condition_name, condition_mask in (
-                        ("open", mask & ~constrained),
-                        ("constrained", mask & constrained),
-                    ):
-                        if bool(condition_mask.any()):
-                            prefix = f"Environment/{name}_{condition_name}"
-                            env.extras["log"][f"{prefix}_d_active_hand_mean"] = (
-                                env.d_active_hand[condition_mask].mean()
-                            )
-                            env.extras["log"][f"{prefix}_physical_grasp_mean"] = (
-                                env.c_physical_grasp[condition_mask].mean()
-                            )
-                            env.extras["log"][f"{prefix}_success_ratio"] = (
-                                env.task_succeeded[condition_mask].float().mean()
-                            )
-    elif constrained is not None:
-        scan = local_environment_scan_obs(env).detach()
-        env.extras["log"]["Environment/table_ratio"] = constrained.float().mean()
-        for name, mask in (("open", ~constrained), ("table", constrained)):
-            if bool(mask.any()):
-                env.extras["log"][f"Environment/{name}_body_collision_ratio"] = (
-                    max_force[mask] > threshold
-                ).float().mean()
-                env.extras["log"][f"Environment/{name}_scan_proximity_mean"] = scan[mask].mean()
-                env.extras["log"][f"Environment/{name}_d_active_hand_mean"] = env.d_active_hand[mask].mean()
-                env.extras["log"][f"Environment/{name}_physical_grasp_mean"] = env.c_physical_grasp[mask].mean()
-                env.extras["log"][f"Environment/{name}_success_ratio"] = env.task_succeeded[mask].float().mean()
+    return penalty
+
+
+def distance_relaxed_hand_collision_penalty(
+    env,
+    threshold: float,
+    force_scale: float,
+    relax_distance: float,
+    left_sensor_cfg: SceneEntityCfg,
+    right_sensor_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    """Keep both hands clear, but release only the active hand near its target."""
+    sensor = env.scene[left_sensor_cfg.name]
+
+    def maximum_force(body_ids: list[int]) -> torch.Tensor:
+        history = sensor.data.net_forces_w_history[:, :, body_ids]
+        return torch.linalg.norm(history, dim=-1).amax(dim=(1, 2))
+
+    left_force = maximum_force(left_sensor_cfg.body_ids)
+    right_force = maximum_force(right_sensor_cfg.body_ids)
+    left_penalty = torch.tanh(torch.clamp(left_force - threshold, min=0.0) / force_scale)
+    right_penalty = torch.tanh(torch.clamp(right_force - threshold, min=0.0) / force_scale)
+
+    active_weight = torch.tanh(env.d_active_hand.detach() / max(relax_distance, 1.0e-6))
+    left_active = env.active_hand == 0
+    left_weight = torch.where(left_active, active_weight, torch.ones_like(active_weight))
+    right_weight = torch.where(~left_active, active_weight, torch.ones_like(active_weight))
+    penalty = left_weight * left_penalty + right_weight * right_penalty
+
+    log = env.extras["log"]
+    log["Environment/active_hand_contact_weight"] = active_weight.mean()
+    log["Environment/left_hand_collision_force_mean"] = left_force.mean()
+    log["Environment/right_hand_collision_force_mean"] = right_force.mean()
+    log["Environment/hand_collision_penalty_mean"] = penalty.mean()
     return penalty
 
 
@@ -90,6 +95,21 @@ class G1Dex1SceneAwareRewardsCfg(G1Dex1HierDrcRewardsCfg):
             ),
         },
     )
+    hand_environment_collision = RewTerm(
+        func=distance_relaxed_hand_collision_penalty,
+        weight=-2.0,
+        params={
+            "threshold": 5.0,
+            "force_scale": 40.0,
+            "relax_distance": 0.25,
+            "left_sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["left_.*(?:hand|wrist).*"],
+            ),
+            "right_sensor_cfg": SceneEntityCfg(
+                "contact_forces", body_names=["right_.*(?:hand|wrist).*"],
+            ),
+        },
+    )
 
 
 @configclass
@@ -101,5 +121,6 @@ class G1Dex1SceneAwareGeometryRewardsCfg(G1Dex1SceneAwareRewardsCfg):
             "safe_margin": 0.08,
             "transition_width": 0.06,
             "relative_coefficient": 0.05,
+            "active_hand_relax_distance": 0.25,
         },
     )

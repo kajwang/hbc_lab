@@ -21,21 +21,21 @@ from .multi_geometry import (
     CABINET_TOP_FAMILY,
     GAP_FAMILY,
     GEOMETRY_FAMILY_NAMES,
+    OPEN_PLATFORM_FAMILY,
     PILLAR_FAMILY,
     REACH_OVER_FAMILY,
-    TABLE_TOP_FAMILY,
     TABLE_UNDER_FAMILY,
+    balanced_family,
     lerp_range,
-    paired_family_and_constraint,
-    paired_uniform,
     preview_family_and_level,
+    uniform_sample,
 )
 from .multi_geometry_scenes import (
     CABINET_BOX_SIZES,
     CABINET_LOCAL_CENTERS,
     CABINET_SHELF_SURFACE_HEIGHT,
-    COUNTERFACTUAL_SUPPORT_THICKNESS,
     GAP_WALL_SIZE,
+    OPEN_PLATFORM_SIZE,
     OOD_ARCH_CLEARANCE,
     OOD_ARCH_OPENING_WIDTH,
     OOD_ARCH_POST_SIZE,
@@ -58,19 +58,17 @@ _PILLAR_BOX_INDEX = _TABLE_BOX_COUNT + _CABINET_BOX_COUNT
 _GAP_BOX_SLICE = slice(_PILLAR_BOX_INDEX + 1, _PILLAR_BOX_INDEX + 3)
 _OOD_ARCH_BOX_SLICE = slice(_GAP_BOX_SLICE.stop, _GAP_BOX_SLICE.stop + 3)
 _REACH_OVER_BARRIER_BOX_SLICE = slice(_OOD_ARCH_BOX_SLICE.stop, _OOD_ARCH_BOX_SLICE.stop + 3)
-_REACH_OVER_SUPPORT_BOX_INDEX = _REACH_OVER_BARRIER_BOX_SLICE.stop
-_OBSTACLE_BOX_COUNT = _REACH_OVER_SUPPORT_BOX_INDEX + 1
+_SUPPORT_BOX_INDEX = _REACH_OVER_BARRIER_BOX_SLICE.stop
+_OBSTACLE_BOX_COUNT = _SUPPORT_BOX_INDEX + 1
 
 
 def _ensure_multi_geometry_buffers(env) -> None:
     if not hasattr(env, "geometry_family_id"):
         env.geometry_family_id = torch.full(
-            (env.num_envs,), TABLE_TOP_FAMILY, device=env.device, dtype=torch.long
+            (env.num_envs,), OPEN_PLATFORM_FAMILY, device=env.device, dtype=torch.long
         )
     if not hasattr(env, "geometry_family_level"):
         env.geometry_family_level = torch.zeros(env.num_envs, device=env.device)
-    if not hasattr(env, "scene_is_constrained"):
-        env.scene_is_constrained = torch.zeros(env.num_envs, device=env.device, dtype=torch.bool)
     if not hasattr(env, "scene_geometry_scalar"):
         env.scene_geometry_scalar = torch.zeros(env.num_envs, device=env.device)
     if not hasattr(env, "scene_geometry_center_w"):
@@ -81,13 +79,10 @@ def _ensure_multi_geometry_buffers(env) -> None:
         env.scene_table_center_w = torch.zeros(env.num_envs, 3, device=env.device)
 
 
-def _family_condition_and_level(
-    env, env_ids: torch.Tensor
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def _family_and_level(env, env_ids: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     if getattr(env.cfg, "geometry_ood_mode", False):
         family = torch.full_like(env_ids, GAP_FAMILY)
-        constrained = torch.ones_like(env_ids, dtype=torch.bool)
-        return family, constrained, torch.ones(env_ids.shape[0], device=env.device)
+        return family, torch.ones(env_ids.shape[0], device=env.device)
     play_env_id = int(getattr(env.cfg, "play_env_id", -1))
     if play_env_id >= 0:
         if not 0 <= play_env_id < len(GEOMETRY_FAMILY_NAMES):
@@ -96,18 +91,15 @@ def _family_condition_and_level(
             )
         family = torch.full_like(env_ids, play_env_id)
         if getattr(env.cfg, "geometry_preview_sweep", False):
-            constrained = torch.remainder(env_ids, 2) == 1
-            pair_ids = torch.div(env_ids, 2, rounding_mode="floor").float()
-            max_pair_id = max((env.num_envs - 1) // 2, 1)
-            level = (pair_ids / float(max_pair_id)).clamp_(0.0, 1.0)
+            max_env_id = max(env.num_envs - 1, 1)
+            level = (env_ids.float() / float(max_env_id)).clamp_(0.0, 1.0)
         else:
-            constrained = torch.ones_like(env_ids, dtype=torch.bool)
             level = torch.full(
                 (env_ids.shape[0],),
                 float(getattr(env.cfg, "play_geo_level", 1.0)),
                 device=env.device,
             ).clamp_(0.0, 1.0)
-        return family, constrained, level
+        return family, level
     train_family_id = int(getattr(env.cfg, "train_family_id", -1))
     if train_family_id >= 0:
         if not 0 <= train_family_id < len(GEOMETRY_FAMILY_NAMES):
@@ -115,27 +107,26 @@ def _family_condition_and_level(
                 f"train_family_id must be in [0, {len(GEOMETRY_FAMILY_NAMES) - 1}], got {train_family_id}."
             )
         family = torch.full_like(env_ids, train_family_id)
-        constrained = torch.remainder(env_ids, 2) == 1
         levels = getattr(
             env,
             "geometry_curriculum_levels",
             torch.zeros(len(GEOMETRY_FAMILY_NAMES), device=env.device),
         )
-        return family, constrained, levels[family]
-    family, constrained = paired_family_and_constraint(env_ids, len(GEOMETRY_FAMILY_NAMES))
+        return family, levels[family]
+    family = balanced_family(env_ids, len(GEOMETRY_FAMILY_NAMES))
     if getattr(env.cfg, "geometry_preview_sweep", False):
         preview_family, level = preview_family_and_level(
             env_ids,
             family_count=len(GEOMETRY_FAMILY_NAMES),
             total_envs=env.num_envs,
         )
-        return preview_family, constrained, level
+        return preview_family, level
     levels = getattr(
         env,
         "geometry_curriculum_levels",
         torch.zeros(len(GEOMETRY_FAMILY_NAMES), device=env.device),
     )
-    return family, constrained, levels[family]
+    return family, levels[family]
 
 
 def _parked_positions(
@@ -179,27 +170,30 @@ def reset_multi_geometry_pnp(
     obj = env.scene[asset_cfg.name]
     count = env_ids.numel()
     dtype = obj.data.root_pos_w.dtype
-    family, constrained, level = _family_condition_and_level(env, env_ids)
+    family, level = _family_and_level(env, env_ids)
 
     object_root_pos_w = env.scene.env_origins[env_ids].clone()
-    object_root_pos_w[:, 0] += paired_uniform(env_ids, *pose_range["x"], salt=1.0).to(dtype)
-    object_root_pos_w[:, 1] += paired_uniform(env_ids, *pose_range["y"], salt=2.0).to(dtype)
+    object_root_pos_w[:, 0] += uniform_sample(env_ids, *pose_range["x"]).to(dtype)
+    object_root_pos_w[:, 1] += uniform_sample(env_ids, *pose_range["y"]).to(dtype)
     object_root_pos_w[:, 2] += object_ground_root_height
-    table_top = family == TABLE_TOP_FAMILY
+    open_platform = family == OPEN_PLATFORM_FAMILY
     cabinet_top = family == CABINET_TOP_FAMILY
     cabinet_middle = family == CABINET_MIDDLE_FAMILY
     cabinet_bottom = family == CABINET_BOTTOM_FAMILY
     cabinet = cabinet_top | cabinet_middle | cabinet_bottom
     reach_over_family = family == REACH_OVER_FAMILY
-    object_root_pos_w[:, 2] += table_top * (TABLE_NOMINAL_CLEARANCE + TABLE_TOP_SIZE[2])
+    platform_surface_height = uniform_sample(
+        env_ids,
+        OPEN_PLATFORM_SIZE[2],
+        lerp_range(level, 0.30, 0.70),
+    ).to(dtype)
+    object_root_pos_w[:, 2] += open_platform * platform_surface_height
     object_root_pos_w[:, 2] += cabinet_top * CABINET_SHELF_SURFACE_HEIGHT["top"]
     object_root_pos_w[:, 2] += cabinet_middle * CABINET_SHELF_SURFACE_HEIGHT["middle"]
     object_root_pos_w[:, 2] += cabinet_bottom * CABINET_SHELF_SURFACE_HEIGHT["bottom"]
     object_root_pos_w[:, 2] += reach_over_family * REACH_OVER_SUPPORT_SURFACE_HEIGHT
 
-    yaw = paired_uniform(
-        env_ids, *pose_range.get("yaw", (-torch.pi, torch.pi)), salt=3.0
-    ).to(dtype)
+    yaw = uniform_sample(env_ids, *pose_range.get("yaw", (-torch.pi, torch.pi))).to(dtype)
     zeros = torch.zeros_like(yaw)
     object_quat_w = math_utils.quat_from_euler_xyz(zeros, zeros, yaw)
 
@@ -238,8 +232,7 @@ def reset_multi_geometry_pnp(
     env.object_target_pos_w[env_ids] = target_frame_pos_w
 
     table_under = family == TABLE_UNDER_FAMILY
-    table_family = table_top | table_under
-    table = table_family & constrained
+    table = table_under
     table_depth = lerp_range(level, 0.12, 0.38)
     table_center_xy = object_root_pos_w[:, :2] + away_xy * (
         0.5 * TABLE_TOP_SIZE[0] - table_depth
@@ -253,7 +246,7 @@ def reset_multi_geometry_pnp(
         _root_state(actual_table_pos_w, actual_table_yaw), env_ids=env_ids
     )
 
-    cabinet_obstacle = cabinet & constrained
+    cabinet_obstacle = cabinet
     cabinet_depth = lerp_range(level, 0.10, 0.28)
     cabinet_center_xy = object_root_pos_w[:, :2] + away_xy * (0.25 - cabinet_depth)[:, None]
     cabinet_pos_w = env.scene.env_origins[env_ids].clone()
@@ -284,9 +277,11 @@ def reset_multi_geometry_pnp(
     )
     pillar_family = family == PILLAR_FAMILY
     gap_family = family == GAP_FAMILY
-    ood_arch = torch.full_like(constrained, bool(getattr(env.cfg, "geometry_ood_mode", False)))
-    pillar = pillar_family & constrained & ~ood_arch
-    gap = gap_family & constrained & ~ood_arch
+    ood_arch = torch.full(
+        (count,), bool(getattr(env.cfg, "geometry_ood_mode", False)), device=env.device, dtype=torch.bool
+    )
+    pillar = pillar_family & ~ood_arch
+    gap = gap_family & ~ood_arch
     pillar_distance = lerp_range(level, 0.62, 0.32)
     pillar_lateral = lerp_range(level, 0.20, 0.03)
     pillar_center_xy = (
@@ -327,9 +322,9 @@ def reset_multi_geometry_pnp(
         _root_state(actual_gap_right_pos_w, actual_gap_yaw), env_ids=env_ids
     )
 
-    # Reach-over keeps the object pose and support identical in both paired
-    # environments. Only the frontal barrier is removed from the open member.
-    reach_over = reach_over_family & constrained
+    # Reach-over places a taller frontal wall between the robot and object,
+    # requiring the active hand to approach from above.
+    reach_over = reach_over_family
     reach_depth = lerp_range(level, 0.20, 0.38)
     reach_barrier_center_xy = object_root_pos_w[:, :2] + toward_robot_xy * (
         reach_depth + 0.5 * REACH_OVER_BARRIER_THICKNESS
@@ -416,17 +411,20 @@ def reset_multi_geometry_pnp(
         _root_state(actual_arch_top_pos_w, arch_yaw), env_ids=env_ids
     )
 
-    elevated_open = (table_top | cabinet) & ~constrained
-    support_pos_w = object_root_pos_w.clone()
-    support_pos_w[:, 2] -= object_ground_root_height + 0.5 * COUNTERFACTUAL_SUPPORT_THICKNESS
-    parked_support_pos_w = _parked_positions(
+    open_platform_pos_w = object_root_pos_w.clone()
+    open_platform_pos_w[:, 2] = (
+        env.scene.env_origins[env_ids, 2]
+        + platform_surface_height
+        - 0.5 * OPEN_PLATFORM_SIZE[2]
+    )
+    parked_open_platform_pos_w = _parked_positions(
         env, env_ids, (0.0, 0.0), 24.0
     )
-    actual_support_pos_w = torch.where(
-        elevated_open[:, None], support_pos_w, parked_support_pos_w
+    actual_open_platform_pos_w = torch.where(
+        open_platform[:, None], open_platform_pos_w, parked_open_platform_pos_w
     )
-    env.scene["counterfactual_support"].write_root_state_to_sim(
-        _root_state(actual_support_pos_w, torch.zeros_like(yaw)), env_ids=env_ids
+    env.scene["open_platform"].write_root_state_to_sim(
+        _root_state(actual_open_platform_pos_w, torch.zeros_like(yaw)), env_ids=env_ids
     )
 
     centers_w = torch.zeros(count, _OBSTACLE_BOX_COUNT, 3, device=env.device, dtype=dtype)
@@ -534,20 +532,20 @@ def reset_multi_geometry_pnp(
     )
     active[:, _REACH_OVER_BARRIER_BOX_SLICE] |= reach_barrier_active
 
-    reach_support_half_extent = 0.5 * torch.tensor(
-        REACH_OVER_SUPPORT_SIZE, device=env.device, dtype=dtype
+    reach_support_half_extent = 0.5 * torch.tensor(REACH_OVER_SUPPORT_SIZE, device=env.device, dtype=dtype)
+    open_platform_half_extent = 0.5 * torch.tensor(OPEN_PLATFORM_SIZE, device=env.device, dtype=dtype)
+    support_center_w = torch.where(open_platform[:, None], open_platform_pos_w, reach_support_pos_w)
+    support_half_extent = torch.where(
+        open_platform[:, None], open_platform_half_extent, reach_support_half_extent
     )
-    centers_w[:, _REACH_OVER_SUPPORT_BOX_INDEX] = torch.where(
-        reach_over_family[:, None],
-        reach_support_pos_w,
-        centers_w[:, _REACH_OVER_SUPPORT_BOX_INDEX],
+    support_active = open_platform | reach_over_family
+    centers_w[:, _SUPPORT_BOX_INDEX] = torch.where(
+        support_active[:, None], support_center_w, centers_w[:, _SUPPORT_BOX_INDEX]
     )
-    half_extents[:, _REACH_OVER_SUPPORT_BOX_INDEX] = torch.where(
-        reach_over_family[:, None],
-        reach_support_half_extent,
-        half_extents[:, _REACH_OVER_SUPPORT_BOX_INDEX],
+    half_extents[:, _SUPPORT_BOX_INDEX] = torch.where(
+        support_active[:, None], support_half_extent, half_extents[:, _SUPPORT_BOX_INDEX]
     )
-    active[:, _REACH_OVER_SUPPORT_BOX_INDEX] |= reach_over_family
+    active[:, _SUPPORT_BOX_INDEX] |= support_active
     write_obstacle_boxes(env, env_ids, centers_w, quats_w, half_extents, active)
 
     table_top_center_w = table_pos_w.clone()
@@ -562,8 +560,9 @@ def reset_multi_geometry_pnp(
     main_center_w = torch.zeros_like(object_root_pos_w)
     main_center_w = torch.where(table[:, None], table_top_center_w, main_center_w)
     main_center_w = torch.where(cabinet_obstacle[:, None], cabinet_opening_center_w, main_center_w)
-    main_center_w = torch.where(pillar_family[:, None] & constrained[:, None], pillar_pos_w, main_center_w)
-    main_center_w = torch.where(gap_family[:, None] & constrained[:, None], gap_center_w, main_center_w)
+    main_center_w = torch.where(open_platform[:, None], open_platform_pos_w, main_center_w)
+    main_center_w = torch.where(pillar_family[:, None], pillar_pos_w, main_center_w)
+    main_center_w = torch.where(gap_family[:, None], gap_center_w, main_center_w)
     reach_barrier_center_w = torch.cat(
         (
             reach_barrier_center_xy,
@@ -586,10 +585,11 @@ def reset_multi_geometry_pnp(
         dim=-1,
     )
     main_center_w = torch.where(ood_arch[:, None], arch_center_w, main_center_w)
-    geometry_scalar = torch.where(table, table_depth, torch.zeros_like(level))
+    geometry_scalar = torch.where(open_platform, platform_surface_height, torch.zeros_like(level))
+    geometry_scalar = torch.where(table, table_depth, geometry_scalar)
     geometry_scalar = torch.where(cabinet_obstacle, cabinet_depth, geometry_scalar)
-    geometry_scalar = torch.where(pillar_family & constrained, pillar_distance, geometry_scalar)
-    geometry_scalar = torch.where(gap_family & constrained, gap_width, geometry_scalar)
+    geometry_scalar = torch.where(pillar_family, pillar_distance, geometry_scalar)
+    geometry_scalar = torch.where(gap_family, gap_width, geometry_scalar)
     reach_barrier_height = torch.tensor(
         REACH_OVER_BARRIER_HEIGHTS, device=env.device, dtype=dtype
     )[reach_height_bin]
@@ -600,7 +600,6 @@ def reset_multi_geometry_pnp(
 
     env.geometry_family_id[env_ids] = family
     env.geometry_family_level[env_ids] = level
-    env.scene_is_constrained[env_ids] = constrained
     env.scene_geometry_scalar[env_ids] = geometry_scalar
     env.scene_geometry_center_w[env_ids] = main_center_w
     env.scene_table_clearance[env_ids] = torch.where(

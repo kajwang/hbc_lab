@@ -32,6 +32,70 @@ class _SquashedActor(torch.nn.Module):
         return torch.tanh(self.pre_tanh(observations))
 
 
+class _VoxelFusionActor(torch.nn.Module):
+    """Encode a root-local voxel volume before fusing it with task state."""
+
+    def __init__(
+        self,
+        total_obs_dim: int,
+        voxel_shape_xyz: tuple[int, int, int],
+        num_actions: int,
+    ):
+        super().__init__()
+        self.voxel_shape_xyz = voxel_shape_xyz
+        self.voxel_count = math.prod(voxel_shape_xyz)
+        self.state_dim = total_obs_dim - self.voxel_count
+        if self.state_dim <= 0:
+            raise ValueError(
+                f"Actor observation {total_obs_dim} is smaller than voxel input {self.voxel_count}."
+            )
+
+        self.input_shape_hint = torch.nn.Identity()
+        self.input_shape_hint.in_features = total_obs_dim
+        self.voxel_encoder = torch.nn.Sequential(
+            torch.nn.Conv2d(voxel_shape_xyz[2], 32, kernel_size=3, stride=2, padding=1),
+            torch.nn.ELU(),
+            torch.nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+            torch.nn.ELU(),
+            torch.nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1),
+            torch.nn.ELU(),
+            torch.nn.AdaptiveAvgPool2d((3, 3)),
+            torch.nn.Flatten(),
+            torch.nn.Linear(64 * 3 * 3, 128),
+            torch.nn.ELU(),
+        )
+        self.state_encoder = torch.nn.Sequential(
+            torch.nn.Linear(self.state_dim, 256),
+            torch.nn.ELU(),
+            torch.nn.Linear(256, 128),
+            torch.nn.ELU(),
+        )
+        self.fusion = torch.nn.Sequential(
+            torch.nn.Linear(256, 256),
+            torch.nn.ELU(),
+            torch.nn.Linear(256, 128),
+            torch.nn.ELU(),
+            torch.nn.Linear(128, num_actions),
+        )
+
+    def __getitem__(self, index: int) -> torch.nn.Module:
+        if index == 0:
+            return self.input_shape_hint
+        raise IndexError(index)
+
+    def forward(self, observations: torch.Tensor) -> torch.Tensor:
+        state = observations[:, : self.state_dim]
+        voxel = observations[:, self.state_dim :].reshape(
+            -1,
+            self.voxel_shape_xyz[2],
+            self.voxel_shape_xyz[1],
+            self.voxel_shape_xyz[0],
+        )
+        return self.fusion(
+            torch.cat((self.state_encoder(state), self.voxel_encoder(voxel)), dim=-1)
+        )
+
+
 class _FiniteAdam(torch.optim.Adam):
     """Fail before an optimizer step can write non-finite policy parameters."""
 
@@ -91,6 +155,33 @@ class SquashedGaussianActorCritic(ActorCritic):
         self.distribution = torch.distributions.Normal(latent_mean, std)
 
 
+class SceneAwareSquashedGaussianActorCritic(SquashedGaussianActorCritic):
+    """Squashed policy with a z-as-channel 2D CNN for scene occupancy."""
+
+    def __init__(self, *args, actor_output_scale: float = 0.01, **kwargs):
+        super().__init__(*args, actor_output_scale=actor_output_scale, **kwargs)
+        from hbc_lab.tasks.manager_based.skill.g1_dex1_scene_aware_hier_drc.mdp.scenes import (
+            ENVIRONMENT_VOXEL_SHAPE_XYZ,
+        )
+
+        old_actor = self.actor.latent_actor
+        first_linear = next(module for module in old_actor.modules() if isinstance(module, torch.nn.Linear))
+        output_linear = next(
+            module for module in reversed(list(old_actor.modules())) if isinstance(module, torch.nn.Linear)
+        )
+        actor = _VoxelFusionActor(
+            total_obs_dim=first_linear.in_features,
+            voxel_shape_xyz=ENVIRONMENT_VOXEL_SHAPE_XYZ,
+            num_actions=output_linear.out_features,
+        )
+        final_layer = next(
+            module for module in reversed(list(actor.modules())) if isinstance(module, torch.nn.Linear)
+        )
+        torch.nn.init.orthogonal_(final_layer.weight, gain=actor_output_scale)
+        torch.nn.init.zeros_(final_layer.bias)
+        self.actor = _SquashedActor(actor)
+
+
 class SquashedGaussianPPO(PPO):
     """Optimize latent Gaussian actions and squash only the actions sent to the environment."""
 
@@ -123,8 +214,17 @@ class SquashedGaussianPPO(PPO):
         """Record the source of finite observation spikes in scene-aware policies."""
         actor_obs = self.policy.get_actor_obs(obs)
         actor_obs = self.policy.actor_obs_normalizer(actor_obs)
-        if actor_obs.ndim != 2 or actor_obs.shape[-1] not in (1685, 4432):
+        if actor_obs.ndim != 2 or actor_obs.shape[-1] < 1360:
             return
+
+        environment_start = 1360
+        if actor_obs.shape[-1] > environment_start:
+            from hbc_lab.tasks.manager_based.skill.g1_dex1_scene_aware_hier_drc.mdp.scenes import (
+                ENVIRONMENT_VOXEL_COUNT,
+            )
+
+            if actor_obs.shape[-1] != environment_start + ENVIRONMENT_VOXEL_COUNT:
+                return
 
         detached_obs = actor_obs.detach()
         blocks = {
@@ -135,7 +235,7 @@ class SquashedGaussianPPO(PPO):
             "command_state": detached_obs[:, 250:480],
             "execution": detached_obs[:, 480:1170],
             "last_action": detached_obs[:, 1170:1360],
-            "environment": detached_obs[:, 1360:],
+            "environment": detached_obs[:, environment_start:],
         }
         self._action_diagnostics["Observation/abs_max"] = detached_obs.abs().max()
         self._action_diagnostics["Observation/over_10_ratio"] = (detached_obs.abs() > 10.0).float().mean()
@@ -165,4 +265,5 @@ def register_rsl_rl_extensions() -> None:
     import rsl_rl.runners.on_policy_runner as on_policy_runner
 
     on_policy_runner.SquashedGaussianActorCritic = SquashedGaussianActorCritic
+    on_policy_runner.SceneAwareSquashedGaussianActorCritic = SceneAwareSquashedGaussianActorCritic
     on_policy_runner.SquashedGaussianPPO = SquashedGaussianPPO

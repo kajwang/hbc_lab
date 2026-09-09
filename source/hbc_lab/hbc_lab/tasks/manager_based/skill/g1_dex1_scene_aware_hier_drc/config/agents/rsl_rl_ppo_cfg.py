@@ -54,6 +54,10 @@ class G1Dex1SceneAwareGeometrySquashedPPORunnerCfg(G1Dex1SceneAwareSquashedPPORu
 class G1Dex1MultiGeometrySquashedPPORunnerCfg(G1Dex1SceneAwareSquashedPPORunnerCfg):
     experiment_name = "g1_dex1_multi_geometry_squashed_hier_drc"
 
+    def __post_init__(self):
+        super().__post_init__()
+        self.policy.class_name = "SceneAwareSquashedGaussianActorCritic"
+
 
 @configclass
 class G1Dex1ReachOverSquashedPPORunnerCfg(G1Dex1SceneAwareSquashedPPORunnerCfg):

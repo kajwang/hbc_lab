@@ -15,6 +15,9 @@ from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.mdp.observations import 
     _enable_dynamic_term_history,
 )
 
+from .geometry_shaping import BODY_PROBE_SPECS, body_obstacle_clearance
+from .multi_geometry import GEOMETRY_FAMILY_NAMES
+
 from .scenes import (
     ENVIRONMENT_LIDAR_HORIZONTAL_FOV,
     ENVIRONMENT_LIDAR_HORIZONTAL_SAMPLES,
@@ -431,11 +434,11 @@ def local_environment_scan_obs(env) -> torch.Tensor:
 
 def privileged_environment_context_obs(env) -> torch.Tensor:
     robot = env.scene["robot"]
-    constrained = getattr(
+    has_geometry = getattr(
         env,
-        "scene_is_constrained",
-        torch.zeros(env.num_envs, dtype=torch.bool, device=env.device),
-    )
+        "scene_obstacle_box_active",
+        torch.zeros(env.num_envs, 1, dtype=torch.bool, device=env.device),
+    ).any(dim=-1)
     clearance = getattr(
         env,
         "scene_geometry_scalar",
@@ -458,12 +461,32 @@ def privileged_environment_context_obs(env) -> torch.Tensor:
         robot.data.root_quat_w,
         geometry_center_w - robot.data.root_pos_w,
     )
-    geometry_center_b = geometry_center_b * constrained.to(geometry_center_b.dtype).unsqueeze(-1)
+    geometry_center_b = geometry_center_b * has_geometry.to(geometry_center_b.dtype).unsqueeze(-1)
+    family_id = getattr(
+        env,
+        "geometry_family_id",
+        torch.zeros(env.num_envs, dtype=torch.long, device=env.device),
+    )
+    family = F.one_hot(family_id, num_classes=len(GEOMETRY_FAMILY_NAMES)).to(clearance.dtype)
+    family_level = getattr(
+        env,
+        "geometry_family_level",
+        torch.zeros(env.num_envs, device=env.device),
+    )
+    body_clearance = body_obstacle_clearance(env).clamp(-0.5, 3.0)
+    expected_body_probes = sum(group == "body" for _, _, group in BODY_PROBE_SPECS)
+    if body_clearance.shape[-1] != expected_body_probes:
+        raise RuntimeError(
+            f"Expected {expected_body_probes} privileged body clearances, got {body_clearance.shape[-1]}."
+        )
     return torch.cat(
         (
-            constrained.to(clearance.dtype).unsqueeze(-1),
+            has_geometry.to(clearance.dtype).unsqueeze(-1),
             clearance.unsqueeze(-1),
             geometry_center_b,
+            family,
+            family_level.unsqueeze(-1),
+            body_clearance,
         ),
         dim=-1,
     )
@@ -482,7 +505,6 @@ class G1Dex1SceneAwareObservationsCfg:
 
     @configclass
     class CriticCfg(G1Dex1HierDrcObservationsCfg.CriticCfg):
-        environment = ObsTerm(func=local_environment_scan_obs, history_length=0)
         environment_privileged = ObsTerm(func=privileged_environment_context_obs, history_length=0)
 
     policy: PolicyCfg = PolicyCfg()

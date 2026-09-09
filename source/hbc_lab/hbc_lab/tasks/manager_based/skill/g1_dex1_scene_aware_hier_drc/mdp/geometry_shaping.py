@@ -6,23 +6,29 @@ from isaaclab.utils import math as math_utils
 from .multi_geometry import GEOMETRY_FAMILY_NAMES
 
 
-# These spheres approximate the links that should clear scene geometry. Hands
-# and feet are intentionally excluded because their contacts can be task- or
-# locomotion-relevant.
+# The group is "body", "left_hand", or "right_hand". Feet remain excluded
+# because their terrain contacts are locomotion-relevant.
 BODY_PROBE_SPECS = (
-    ("pelvis", 0.17),
-    ("waist_yaw_link", 0.14),
-    ("waist_roll_link", 0.14),
-    ("torso_link", 0.20),
-    ("left_shoulder_roll_link", 0.11),
-    ("right_shoulder_roll_link", 0.11),
-    ("left_elbow_link", 0.10),
-    ("right_elbow_link", 0.10),
-    ("left_hip_pitch_link", 0.12),
-    ("right_hip_pitch_link", 0.12),
-    ("left_knee_link", 0.11),
-    ("right_knee_link", 0.11),
+    ("pelvis", 0.17, "body"),
+    ("waist_yaw_link", 0.14, "body"),
+    ("waist_roll_link", 0.14, "body"),
+    ("torso_link", 0.20, "body"),
+    ("left_shoulder_roll_link", 0.11, "body"),
+    ("right_shoulder_roll_link", 0.11, "body"),
+    ("left_elbow_link", 0.10, "body"),
+    ("right_elbow_link", 0.10, "body"),
+    ("left_hip_pitch_link", 0.12, "body"),
+    ("right_hip_pitch_link", 0.12, "body"),
+    ("left_knee_link", 0.11, "body"),
+    ("right_knee_link", 0.11, "body"),
+    ("left_wrist_yaw_link", 0.065, "left_hand"),
+    ("right_wrist_yaw_link", 0.065, "right_hand"),
+    ("left_hand_Link1_2", 0.030, "left_hand"),
+    ("left_hand_Link2_2", 0.030, "left_hand"),
+    ("right_hand_Link1_2", 0.030, "right_hand"),
+    ("right_hand_Link2_2", 0.030, "right_hand"),
 )
+_PROBE_GROUP_ID = {"body": 0, "left_hand": 1, "right_hand": 2}
 
 
 def initialize_obstacle_box_buffers(env, box_count: int) -> None:
@@ -76,7 +82,9 @@ def point_oriented_box_signed_distance(
     return outside + inside
 
 
-def _body_probe_ids_and_radii(env, dtype: torch.dtype) -> tuple[torch.Tensor, torch.Tensor]:
+def _body_probe_metadata(
+    env, dtype: torch.dtype
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     cached = getattr(env, "_geometry_body_probe_cache", None)
     if cached is not None and cached[1].dtype == dtype:
         return cached
@@ -84,24 +92,31 @@ def _body_probe_ids_and_radii(env, dtype: torch.dtype) -> tuple[torch.Tensor, to
     body_names = env.scene["robot"].body_names
     body_ids = []
     radii = []
-    for requested_name, radius in BODY_PROBE_SPECS:
+    groups = []
+    for requested_name, radius, group in BODY_PROBE_SPECS:
         if requested_name in body_names:
             body_ids.append(body_names.index(requested_name))
             radii.append(radius)
+            groups.append(_PROBE_GROUP_ID[group])
     if not body_ids:
         raise RuntimeError("No geometry body probes matched the robot body names.")
     result = (
         torch.tensor(body_ids, device=env.device, dtype=torch.long),
         torch.tensor(radii, device=env.device, dtype=dtype),
+        torch.tensor(groups, device=env.device, dtype=torch.long),
     )
     env._geometry_body_probe_cache = result
     return result
 
 
-def body_obstacle_clearance(env) -> torch.Tensor:
+def body_obstacle_clearance(env, include_hands: bool = False) -> torch.Tensor:
     """Minimum surface clearance for each body probe, shaped ``(env, probe)``."""
     robot = env.scene["robot"]
-    body_ids, radii = _body_probe_ids_and_radii(env, robot.data.body_pos_w.dtype)
+    body_ids, radii, groups = _body_probe_metadata(env, robot.data.body_pos_w.dtype)
+    if not include_hands:
+        body_mask = groups == _PROBE_GROUP_ID["body"]
+        body_ids = body_ids[body_mask]
+        radii = radii[body_mask]
     points_w = robot.data.body_pos_w[:, body_ids]
     if not hasattr(env, "scene_obstacle_box_centers_w"):
         return torch.full(points_w.shape[:2], 3.0, device=env.device, dtype=points_w.dtype)
@@ -126,17 +141,34 @@ def geometry_conditioned_posture_reward(
     safe_margin: float,
     transition_width: float,
     relative_coefficient: float,
+    active_hand_relax_distance: float,
 ) -> torch.Tensor:
-    """Bounded scene-clearance shaping whose scale follows the DRC phase."""
-    clearance = body_obstacle_clearance(env)
+    """Avoid scene geometry while releasing the active hand near its task target."""
+    clearance = body_obstacle_clearance(env, include_hands=True)
+    _, _, groups = _body_probe_metadata(env, clearance.dtype)
     has_geometry = getattr(
         env,
         "scene_obstacle_box_active",
         torch.zeros(env.num_envs, 1, dtype=torch.bool, device=env.device),
     ).any(dim=-1)
-    probe_risk = torch.sigmoid((safe_margin - clearance) / transition_width)
+    normalized_violation = torch.relu(safe_margin - clearance) / transition_width
+    probe_risk = normalized_violation.clamp(max=1.0).square()
     probe_risk = probe_risk * has_geometry[:, None]
-    risk = 0.7 * probe_risk.amax(dim=-1) + 0.3 * probe_risk.mean(dim=-1)
+    active_hand_weight = torch.tanh(
+        env.d_active_hand.detach() / max(active_hand_relax_distance, 1.0e-6)
+    )
+    probe_weights = torch.ones_like(probe_risk)
+    left_active = env.active_hand == 0
+    left_probe = groups == _PROBE_GROUP_ID["left_hand"]
+    right_probe = groups == _PROBE_GROUP_ID["right_hand"]
+    probe_weights[:, left_probe] = torch.where(
+        left_active[:, None], active_hand_weight[:, None], torch.ones_like(active_hand_weight[:, None])
+    )
+    probe_weights[:, right_probe] = torch.where(
+        (~left_active)[:, None], active_hand_weight[:, None], torch.ones_like(active_hand_weight[:, None])
+    )
+    weighted_risk = probe_risk * probe_weights
+    risk = 0.7 * weighted_risk.amax(dim=-1) + 0.3 * weighted_risk.mean(dim=-1)
     stage_scale = 2.0 * env.W_app + 20.0 * env.W_couple + 200.0 * env.W_manip
     reward = -relative_coefficient * stage_scale.detach() * risk
 
@@ -151,11 +183,11 @@ def geometry_conditioned_posture_reward(
     log["Geometry/min_clearance_mean"] = minimum_clearance.clamp(-0.5, 3.0).mean()
     log["Geometry/unsafe_ratio"] = unsafe.float().mean()
     log["Geometry/risk_mean"] = risk.mean()
+    log["Geometry/active_hand_collision_weight"] = active_hand_weight.mean()
     log["Geometry/scaled_reward_mean"] = reward.mean()
     family_id = getattr(env, "geometry_family_id", None)
     if family_id is None:
-        constrained = getattr(env, "scene_is_constrained", has_geometry)
-        family_masks = (("open", ~constrained), ("table", constrained))
+        family_masks = (("all", torch.ones_like(has_geometry)),)
     else:
         family_masks = tuple(
             (name, family_id == family_index)
@@ -169,18 +201,4 @@ def geometry_conditioned_posture_reward(
             log[f"Geometry/{name}_torso_pitch_command"] = env.command_state.posture_command[mask, 1].mean()
             log[f"Geometry/{name}_min_clearance"] = minimum_clearance[mask].clamp(-0.5, 3.0).mean()
             log[f"Geometry/{name}_unsafe_ratio"] = unsafe[mask].float().mean()
-            if family_id is not None:
-                constrained = env.scene_is_constrained
-                for condition_name, condition_mask in (
-                    ("open", mask & ~constrained),
-                    ("constrained", mask & constrained),
-                ):
-                    if bool(condition_mask.any()):
-                        prefix = f"Geometry/{name}_{condition_name}"
-                        log[f"{prefix}_root_height_actual"] = root_height[condition_mask].mean()
-                        log[f"{prefix}_torso_pitch_actual"] = torso_pitch[condition_mask].mean()
-                        log[f"{prefix}_min_clearance"] = (
-                            minimum_clearance[condition_mask].clamp(-0.5, 3.0).mean()
-                        )
-                        log[f"{prefix}_unsafe_ratio"] = unsafe[condition_mask].float().mean()
     return reward

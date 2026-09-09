@@ -15,8 +15,7 @@ OOD_ARCH_POST_SIZE = (0.16, 0.16, 1.22)
 OOD_ARCH_TOP_SIZE = (0.16, 1.30, 0.16)
 OOD_ARCH_OPENING_WIDTH = 0.86
 OOD_ARCH_CLEARANCE = OOD_ARCH_POST_SIZE[2]
-COUNTERFACTUAL_SUPPORT_WIDTH = 0.18
-COUNTERFACTUAL_SUPPORT_THICKNESS = 0.04
+OPEN_PLATFORM_SIZE = (0.60, 0.60, 0.08)
 REACH_OVER_BARRIER_THICKNESS = 0.08
 REACH_OVER_BARRIER_WIDTH = 1.50
 # Every wall is above the apple.  Increasing level raises the rim and moves it
@@ -111,13 +110,9 @@ class G1Dex1MultiGeometrySceneCfg(G1Dex1SceneAwareSceneCfg):
     ood_arch_top = _obstacle_cfg(
         "ood_arch_top", OOD_ARCH_TOP_SIZE, (0.82, 0.30, 0.66), 22.0
     )
-    counterfactual_support = _obstacle_cfg(
-        "counterfactual_support",
-        (
-            COUNTERFACTUAL_SUPPORT_WIDTH,
-            COUNTERFACTUAL_SUPPORT_WIDTH,
-            COUNTERFACTUAL_SUPPORT_THICKNESS,
-        ),
+    open_platform = _obstacle_cfg(
+        "open_platform",
+        OPEN_PLATFORM_SIZE,
         (0.42, 0.45, 0.48),
         24.0,
     )

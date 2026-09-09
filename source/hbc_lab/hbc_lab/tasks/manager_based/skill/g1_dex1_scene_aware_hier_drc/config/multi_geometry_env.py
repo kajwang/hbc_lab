@@ -10,38 +10,20 @@ from hbc_lab.tasks.manager_based.skill.g1_dex1_hier_drc.mdp.object_mass_curricul
 from ..mdp.geometry_shaping import body_obstacle_clearance
 from ..mdp.multi_geometry import (
     GEOMETRY_FAMILY_NAMES,
-    paired_active_hand,
-    paired_family_and_constraint,
+    balanced_active_hand,
+    balanced_family,
 )
 from .scene_aware_env import G1Dex1SceneAwareEnv
 
 
-def _condition_and_hand_balanced_progress(
-    values: torch.Tensor,
-    active_hand: torch.Tensor,
-    constrained: torch.Tensor,
-) -> torch.Tensor:
-    """Return the weakest present open/constrained and left/right stratum."""
-    condition_progress = []
-    for condition in (False, True):
-        mask = constrained == condition
-        if bool(mask.any()):
-            _, _, progress = balanced_active_hand_progress(values[mask], active_hand[mask])
-            condition_progress.append(progress)
-    if not condition_progress:
-        return values.new_zeros(())
-    return torch.stack(condition_progress).amin()
-
-
 class G1Dex1MultiGeometryEnv(G1Dex1SceneAwareEnv):
-    """Counterfactually paired scene-aware PnP with geometry and mass curricula."""
+    """Scene-aware PnP across independent geometry families."""
 
     def __init__(self, cfg, render_mode: str | None = None, **kwargs):
         family_count = len(GEOMETRY_FAMILY_NAMES)
         env_ids = torch.arange(cfg.scene.num_envs, device=cfg.sim.device)
         if getattr(cfg, "geometry_ood_mode", False):
             family = torch.full_like(env_ids, family_count - 1)
-            constrained = torch.ones_like(env_ids, dtype=torch.bool)
         elif getattr(cfg, "play_env_id", -1) >= 0:
             play_env_id = int(cfg.play_env_id)
             if not 0 <= play_env_id < family_count:
@@ -49,10 +31,6 @@ class G1Dex1MultiGeometryEnv(G1Dex1SceneAwareEnv):
                     f"play_env_id must be in [0, {family_count - 1}], got {play_env_id}."
                 )
             family = torch.full_like(env_ids, play_env_id)
-            if getattr(cfg, "geometry_preview_sweep", False):
-                constrained = torch.remainder(env_ids, 2) == 1
-            else:
-                constrained = torch.ones_like(env_ids, dtype=torch.bool)
         elif getattr(cfg, "train_family_id", -1) >= 0:
             train_family_id = int(cfg.train_family_id)
             if not 0 <= train_family_id < family_count:
@@ -60,11 +38,9 @@ class G1Dex1MultiGeometryEnv(G1Dex1SceneAwareEnv):
                     f"train_family_id must be in [0, {family_count - 1}], got {train_family_id}."
                 )
             family = torch.full_like(env_ids, train_family_id)
-            constrained = torch.remainder(env_ids, 2) == 1
         else:
-            family, constrained = paired_family_and_constraint(env_ids, family_count)
+            family = balanced_family(env_ids, family_count)
         self.geometry_family_id = family
-        self.scene_is_constrained = constrained
         self.geometry_family_level = torch.zeros(cfg.scene.num_envs, device=cfg.sim.device)
 
         self.geometry_curriculum_levels = torch.full(
@@ -93,18 +69,16 @@ class G1Dex1MultiGeometryEnv(G1Dex1SceneAwareEnv):
                 raise ValueError(f"play_active_id must be 0 (left) or 1 (right), got {play_active_id}.")
             active_hand = torch.full_like(env_ids, play_active_id)
         else:
-            active_hand = paired_active_hand(env_ids, len(GEOMETRY_FAMILY_NAMES))
+            active_hand = balanced_active_hand(env_ids, len(GEOMETRY_FAMILY_NAMES))
         self.high_level_command.active_hand[env_ids] = active_hand
         self.high_level_command.contact_label.set_single_active_hand(env_ids, active_hand)
         super()._reset_hier_buffers(env_ids)
         self.geometry_safe_reach_streak[env_ids] = 0
 
     def _update_geometry_curriculum(self) -> None:
-        constrained = self.scene_is_constrained
         minimum_clearance = body_obstacle_clearance(self).amin(dim=-1)
         instant_safe_reach = (
-            constrained
-            & (self.d_active_hand <= self.cfg.geometry_safe_reach_distance)
+            (self.d_active_hand <= self.cfg.geometry_safe_reach_distance)
             & (minimum_clearance >= self.cfg.geometry_safe_clearance)
             & ~self.object_fallen
         )
@@ -119,7 +93,7 @@ class G1Dex1MultiGeometryEnv(G1Dex1SceneAwareEnv):
 
         alpha = self.cfg.geometry_curriculum_safe_reach_ema_alpha
         for family_index in range(len(GEOMETRY_FAMILY_NAMES)):
-            mask = constrained & (self.geometry_family_id == family_index)
+            mask = self.geometry_family_id == family_index
             if not bool(mask.any()):
                 continue
             _, _, rate = balanced_active_hand_progress(
@@ -158,13 +132,10 @@ class G1Dex1MultiGeometryEnv(G1Dex1SceneAwareEnv):
             mask = self.geometry_family_id == family_index
             if not bool(mask.any()):
                 continue
-            self.object_mass_family_progress[family_index] = (
-                _condition_and_hand_balanced_progress(
-                    progress[mask],
-                    self.active_hand[mask],
-                    self.scene_is_constrained[mask],
-                )
+            _, _, family_progress = balanced_active_hand_progress(
+                progress[mask], self.active_hand[mask]
             )
+            self.object_mass_family_progress[family_index] = family_progress
 
         next_ema, next_levels = update_monotonic_curriculum_level(
             self.object_mass_curriculum_levels,
